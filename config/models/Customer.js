@@ -46,6 +46,19 @@ const VisitSchema = new mongoose.Schema(
     //   enum: ["Pending", "Sold", "Not Interested", "Follow-up"],
     //   default: "Pending",
     // },
+      requirement: {
+  type: String,
+  trim: true,
+},
+requirementStatus: {
+  type: String,
+  enum: ["none", "pending", "fulfilled"],
+  default: "none",
+},
+requirementFulfilledAt: {
+  type: Date,
+  default: null,
+},
 conclusion: {
   type: String,
   enum: [

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Feedback Form</title>
+<style>
+  :root {
+    --primary: #c9a227;
+    --primary-hover: #b08d1f;
+    --google-blue: #4285F4;
+    --google-hover: #3370d4;
+    --text-main: #2d3748;
+    --text-muted: #718096;
+    --bg-page: #f7fafc;
+    --bg-card: #ffffff;
+    --border: #e2e8f0;
+    --success: #38a169;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg-page);
+    color: var(--text-main);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 24px;
+  }
+
+  .card {
+    background: var(--bg-card);
+    max-width: 460px;
+    width: 100%;
+    padding: 40px 32px;
+    border-radius: 16px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--border);
+    transition: all 0.3s ease;
+  }
+
+  h2 { font-size: 24px; font-weight: 700; color: var(--text-main); margin-bottom: 8px; }
+  p.sub { color: var(--text-muted); font-size: 15px; line-height: 1.5; margin-bottom: 28px; }
+
+  label { display: block; margin-bottom: 8px; font-weight: 600; color: var(--text-main); font-size: 14px; }
+  
+  /* Modern Star Rating Design */
+  .stars-container {
+    background: #fffdf5;
+    border: 1px dashed #fbd38d;
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    justify-content: center;
+    margin-bottom: 24px;
+  }
+  .stars { font-size: 36px; cursor: pointer; display: flex; gap: 8px; user-select: none; }
+  .stars span { color: #e2e8f0; transition: transform 0.1s ease, color 0.2s ease; }
+  .stars span:hover { transform: scale(1.15); }
+  .stars span.active { color: #ffb020; }
+
+  textarea {
+    width: 100%;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 15px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 110px;
+    color: var(--text-main);
+    transition: all 0.2s ease;
+    background: #fcfdfd;
+  }
+  textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.15);
+    background: #fff;
+  }
+
+  button.submit-btn {
+    width: 100%;
+    margin-top: 24px;
+    padding: 14px;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+  button.submit-btn:hover { background: var(--primary-hover); }
+  button.submit-btn:disabled { background: #cbd5e0; cursor: not-allowed; }
+
+  /* Success State UI */
+  #message { text-align: center; padding: 20px 10px; }
+  #message h2 { color: var(--success); font-size: 26px; margin-bottom: 12px; }
+  #message p { color: var(--text-muted); font-size: 15px; line-height: 1.6; }
+  
+  .google-box {
+    margin-top: 28px;
+    background: #f7fafc;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  
+  .btn-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 20px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px 24px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 15px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    width: 100%;
+  }
+
+  .google-btn {
+    background: var(--google-blue);
+    color: #fff;
+  }
+  .google-btn:hover { background: var(--google-hover); }
+
+  .copy-btn {
+    background: #fff;
+    color: var(--text-main);
+    border: 1px solid var(--border);
+  }
+  .copy-btn:hover { background: #f7fafc; border-color: #cbd5e0; }
+
+  .error { color: #e53e3e; font-size: 14px; margin-top: 12px; font-weight: 500; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="card" id="formCard">
+  <h2 id="title">Loading...</h2>
+  <p class="sub" id="subtitle"></p>
+
+  <form id="feedbackForm" style="display:none;">
+    <label>Your Rating</label>
+    <div class="stars-container">
+      <div class="stars" id="stars">
+        <span data-value="1">★</span>
+        <span data-value="2">★</span>
+        <span data-value="3">★</span>
+        <span data-value="4">★</span>
+        <span data-value="5">★</span>
+      </div>
+    </div>
+
+    <label for="comments">Your Comments</label>
+    <textarea id="comments" placeholder="Tell us about your experience..."></textarea>
+
+    <button type="submit" class="submit-btn">Submit Feedback</button>
+    <div class="error" id="errorMsg"></div>
+  </form>
+</div>
+
+<script>
+  const pathParts = window.location.pathname.split("/");
+  const token = pathParts[pathParts.length - 1];
+  const API_BASE = window.location.origin + "/api/feedback";
+
+  const titleEl = document.getElementById("title");
+  const subtitleEl = document.getElementById("subtitle");
+  const formEl = document.getElementById("feedbackForm");
+  const errorEl = document.getElementById("errorMsg");
+  const starsEl = document.getElementById("stars");
+  const formCard = document.getElementById("formCard");
+
+  let selectedRating = 0;
+  let googleReviewLink = ""; 
+
+  // Star Rating logic
+  starsEl.addEventListener("click", (e) => {
+    if (e.target.tagName === "SPAN") {
+      selectedRating = Number(e.target.dataset.value);
+      updateStars();
+    }
+  });
+
+  function updateStars() {
+    document.querySelectorAll("#stars span").forEach((s) => {
+      s.classList.toggle("active", Number(s.dataset.value) <= selectedRating);
+    });
+  }
+
+  // Fetch info on load
+  async function loadFeedbackInfo() {
+    try {
+      const res = await fetch(`${API_BASE}/${token}`);
+      const data = await res.json();
+
+      if (!data.success) {
+        titleEl.textContent = data.message || "Link invalid or expired";
+        subtitleEl.textContent = "Please request a new feedback link.";
+        return;
+      }
+
+      titleEl.textContent = `Hi ${data.data.customerName}!`;
+      subtitleEl.textContent = "We would love to hear about your recent experience with us.";
+      googleReviewLink = data.data.googleReviewLink || ""; 
+      formEl.style.display = "block";
+    } catch (err) {
+      titleEl.textContent = "System Error";
+      subtitleEl.textContent = "Please try again later.";
+    }
+  }
+
+  // Handle Form Submission
+  formEl.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorEl.textContent = "";
+
+    if (selectedRating === 0) {
+      errorEl.textContent = "Please select a rating before submitting.";
+      return;
+    }
+
+    const comments = document.getElementById("comments").value;
+    const submitBtn = formEl.querySelector(".submit-btn");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Submitting securely...";
+
+    try {
+      const res = await fetch(`${API_BASE}/${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating: selectedRating, comments }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        if (selectedRating >= 4 && googleReviewLink) {
+          formCard.innerHTML = `
+            <div id="message">
+              <h2>Thank you so much! 🎉</h2>
+              <p>We're thrilled to know you had a great experience.</p>
+              
+              <div class="google-box">
+                <p style="font-weight: 600; color: #2d3748; margin-bottom: 6px;">Support us on Google</p>
+                <p style="font-size: 14px;">To save you time, you can copy your written review below and paste it directly into Google!</p>
+                
+                <div class="btn-group">
+                  ${comments.trim().length > 0 ? `
+                    <button type="button" class="btn copy-btn" id="copyReviewBtn" onclick="copyReviewText(\`${encodeURIComponent(comments)}\`)">
+                      📋 Copy My Review Text
+                    </button>
+                  ` : ''}
+                  <a href="${googleReviewLink}" target="_blank" class="btn google-btn">
+                    Write Review on Google
+                  </a>
+                </div>
+              </div>
+            </div>`;
+        } else {
+          formCard.innerHTML = `
+            <div id="message">
+              <h2>Thank you! 🙏</h2>
+              <p>Your constructive feedback has been submitted securely. Our management team reads every response to ensure continuous improvement.</p>
+            </div>`;
+        }
+      } else {
+        errorEl.textContent = data.message || "Something went wrong. Please try again.";
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Submit Feedback";
+      }
+    } catch (err) {
+      errorEl.textContent = "Network error. Please check your connection and try again.";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Submit Feedback";
+    }
+  });
+
+  // Helper function to easily copy text to clipboard
+  function copyReviewText(encodedText) {
+    const text = decodeURIComponent(encodedText);
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById("copyReviewBtn");
+      btn.innerText = "✓ Copied to Clipboard!";
+      btn.style.backgroundColor = "#e6fffa";
+      btn.style.borderColor = "#319795";
+      btn.style.color = "#234e52";
+    }).catch(err => {
+      alert("Failed to copy text. Please select and copy manually.");
+    });
+  }
+
+  loadFeedbackInfo();
+</script>
+
+</body>
+</html>

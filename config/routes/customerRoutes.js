@@ -18,6 +18,8 @@ const {
   updateVisit,
   getVisitByNumber,
    deleteVisit,
+   fulfillRequirement,        // ✅ NEW
+  getPendingRequirements
   // createSpecialDayNotifications,  // NOTIFICATION: commented
 } = require("../controllers/customerController");
 
@@ -35,6 +37,8 @@ console.log("📋 addVisit:", typeof addVisit === "function" ? "✅" : "❌");
 console.log("📋 updateVisit:", typeof updateVisit === "function" ? "✅" : "❌");
 console.log("📋 getVisitByNumber:", typeof getVisitByNumber === "function" ? "✅" : "❌");
 // console.log("📋 createSpecialDayNotifications:", typeof createSpecialDayNotifications === "function" ? "✅" : "❌");
+console.log("📋 fulfillRequirement:", typeof fulfillRequirement === "function" ? "✅" : "❌");
+console.log("📋 getPendingRequirements:", typeof getPendingRequirements === "function" ? "✅" : "❌");
 
 // ------------------------------------------------------------------
 // 2. Helper for branch scoping
@@ -158,6 +162,28 @@ if (typeof getVisitByNumber === "function") {
     });
   });
 }
+
+
+// Get all pending requirements (must come before "/:id" routes)
+if (typeof getPendingRequirements === "function") {
+  router.get("/requirements/pending", protect, getPendingRequirements);
+} else {
+  console.error("❌ getPendingRequirements is not a function – route skipped");
+}
+
+// Mark a visit's requirement as fulfilled
+if (typeof fulfillRequirement === "function") {
+  router.patch(
+    "/:id/visits/:visitNumber/fulfill-requirement",
+    protect,
+    restrictTo("admin"),
+    fulfillRequirement
+  );
+} else {
+  console.error("❌ fulfillRequirement is not a function – route skipped");
+}
+
+
 router.get('/distinct/professions', protect, customerController.getDistinctProfessions);
 router.get('/distinct/communities',  protect, customerController.getDistinctCommunities);
 // Complete reminder for a specific visit
