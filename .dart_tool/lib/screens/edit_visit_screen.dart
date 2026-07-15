@@ -40,6 +40,9 @@ class _EditVisitScreenState extends State<EditVisitScreen> {
   String? _selectedEmployee;
   bool _isSaving = false;
 
+  // Requirement status (new)
+  String _requirementStatus = 'none';
+
   // existing (network) images, per category
   List<String> _existingGold = [];
   List<String> _existingDiamond = [];
@@ -102,6 +105,9 @@ class _EditVisitScreenState extends State<EditVisitScreen> {
     _polkiController.text = v['polki']?.toString() ?? '';
     _requirementController.text = v['requirement']?.toString() ?? '';
     _helperController.text = v['helper']?.toString() ?? '';
+
+    // Read requirement status
+    _requirementStatus = v['requirementStatus']?.toString() ?? 'none';
 
     final rawDate = v['visitDate']?.toString();
     if (rawDate != null && rawDate.isNotEmpty) {
@@ -333,13 +339,8 @@ class _EditVisitScreenState extends State<EditVisitScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    CrmTextField(
-                      label: 'Requirement',
-                      hint: 'Specific requirements',
-                      prefixIcon: Icons.checklist,
-                      controller: _requirementController,
-                      maxLines: 2,
-                    ),
+                    // Requirement field with status badge
+                    _buildRequirementSection(),
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -412,7 +413,93 @@ class _EditVisitScreenState extends State<EditVisitScreen> {
     );
   }
 
-Widget _buildImageSection(
+  // New helper to build the requirement section with badge
+  // Widget _buildRequirementSection() {
+  //   final bool isFulfilled = _requirementStatus == 'fulfilled';
+  //   return Column(
+  //     crossAxisAlignment: CrossAxisAlignment.start,
+  //     children: [
+  //       if (isFulfilled)
+  //         Container(
+  //           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+  //           margin: const EdgeInsets.only(bottom: 6),
+  //           decoration: BoxDecoration(
+  //             color: AppColors.success.withOpacity(0.15),
+  //             borderRadius: BorderRadius.circular(6),
+  //           ),
+  //           child: Row(
+  //             mainAxisSize: MainAxisSize.min,
+  //             children: const [
+  //               Icon(Icons.check_circle, color: AppColors.success, size: 16),
+  //               SizedBox(width: 4),
+  //               Text('Available', style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w600)),
+  //             ],
+  //           ),
+  //         ),
+  //       CrmTextField(
+  //         label: 'Requirement',
+  //         hint: 'Specific requirements',
+  //         prefixIcon: Icons.checklist,
+  //         controller: _requirementController,
+  //         maxLines: 2,
+  //       ),
+  //     ],
+  //   );
+  // }
+    Widget _buildRequirementSection() {
+  final bool isFulfilled = _requirementStatus == 'fulfilled';
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      TextFormField(
+        controller: _requirementController,
+        maxLines: 2,
+        decoration: InputDecoration(
+          labelText: 'Requirement',
+          hintText: 'Specific requirements',
+          prefixIcon: const Icon(Icons.checklist, color: AppColors.textSecondary),
+          suffixIcon: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: Chip(
+              label: Text(
+                isFulfilled ? 'Available' : 'Pending',
+                style: TextStyle(
+                  color: isFulfilled ? Colors.white : Colors.orange[800],
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
+              backgroundColor: isFulfilled ? AppColors.success : Colors.orange.withOpacity(0.2),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppColors.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppColors.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppColors.primary, width: 1.4),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        ),
+        style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
+        // Keep any validator if needed (optional)
+        validator: (v) => v?.trim().isEmpty ?? true ? 'Requirement is required' : null,
+      ),
+    ],
+  );
+}
+
+  Widget _buildImageSection(
     String type,
     String label,
     List<String> existing,
@@ -434,8 +521,6 @@ Widget _buildImageSection(
                 final url = existing[i];
                 final isMarkedForRemoval = removed.contains(url);
                 final imageUrl = ApiService.getImageUrl(url);
-                print('🖼️ EDIT VISIT — raw url: $url');
-                print('🖼️ EDIT VISIT — final url: $imageUrl');
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: Stack(
@@ -450,7 +535,6 @@ Widget _buildImageSection(
                             height: 80,
                             fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) {
-                              print('❌ Image load failed for: $imageUrl');
                               return const Icon(Icons.broken_image, size: 40);
                             },
                           ),

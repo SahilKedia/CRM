@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tzData;
 import 'package:flutter/material.dart';
+import 'api_service.dart'; // 👈 import your API service
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -37,7 +38,6 @@ class NotificationService {
     await _plugin.initialize(
       settings,
       onDidReceiveNotificationResponse: (details) {
-        // Called when notification is tapped (including when app is in foreground)
         _handleNotificationTap(details);
       },
     );
@@ -55,6 +55,7 @@ class NotificationService {
 
     String? title = 'Reminder';
     String? body = 'You have a reminder!';
+    String? customerId;
 
     // Parse payload as JSON
     if (details.payload != null && details.payload!.isNotEmpty) {
@@ -62,12 +63,22 @@ class NotificationService {
         final data = jsonDecode(details.payload!) as Map<String, dynamic>;
         title = data['title'] as String? ?? title;
         body = data['body'] as String? ?? body;
+        customerId = data['customerId'] as String?; // extract customer ID
       } catch (e) {
-        // If not valid JSON, use payload as body
         body = details.payload;
       }
     }
 
+    // ---- Update backend status if we have a customerId ----
+    if (customerId != null) {
+      ApiService().markReminderCompleted(customerId).then((_) {
+        print('✅ Reminder for customer $customerId marked as completed.');
+      }).catchError((error) {
+        print('❌ Failed to update reminder status: $error');
+      });
+    }
+
+    // Show the dialog (regardless of API success/failure)
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -86,6 +97,8 @@ class NotificationService {
 
   int _idFromCustomer(String customerId) => customerId.hashCode & 0x7fffffff;
 
+  /// Schedules a reminder notification.
+  /// Stores the customerId so we can update the backend when tapped.
   Future<void> scheduleReminder({
     required String customerId,
     required String customerName,
@@ -94,7 +107,6 @@ class NotificationService {
   }) async {
     final id = _idFromCustomer(customerId);
 
-    // Use the exact time (hour/minute) from the UI
     final scheduledDate = tz.TZDateTime(
       tz.local,
       reminderDate.year,
@@ -104,16 +116,16 @@ class NotificationService {
       reminderDate.minute,
     );
 
-    // If scheduled time is in the past, set it to 5 seconds from now (for testing)
     final now = tz.TZDateTime.now(tz.local);
     final finalDate = scheduledDate.isBefore(now)
         ? now.add(const Duration(seconds: 5))
         : scheduledDate;
 
-    // Package title & body into payload for later retrieval
+    // Include customerId in the payload
     final payload = jsonEncode({
       'title': customerName,
       'body': message,
+      'customerId': customerId, // 👈 stored for later retrieval
     });
 
     const androidDetails = AndroidNotificationDetails(
@@ -139,14 +151,14 @@ class NotificationService {
 
     await _plugin.zonedSchedule(
       id,
-      customerName,        // title shown in system notification
-      message,             // body shown in system notification
+      customerName,
+      message,
       finalDate,
       details,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
-      payload: payload,    // store JSON for popup
+      payload: payload,
     );
   }
 

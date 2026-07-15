@@ -749,6 +749,143 @@ class ApiService {
       };
     }
   }
+    // Mark a visit's requirement as fulfilled (product now in stock)
+Future<Map<String, dynamic>> fulfillRequirement(String customerId, int visitNumber) async {
+  try {
+    final token = await _getToken();
+    if (token == null) {
+      return {
+        'success': false,
+        'message': 'Authentication required. Please login again.',
+      };
+    }
+
+    final response = await _dio.patch(
+      '/customers/$customerId/visits/$visitNumber/fulfill-requirement',
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      ),
+    );
+
+    if (response.data is Map<String, dynamic>) {
+      return response.data as Map<String, dynamic>;
+    } else {
+      return {
+        'success': false,
+        'message': 'Invalid response format',
+      };
+    }
+  } on DioException catch (e) {
+    print('❌ Dio Error: ${e.response?.data}');
+    return {
+      'success': false,
+      'message': e.response?.data?['message'] ?? 'Failed to update requirement',
+    };
+  } catch (e) {
+    print('❌ Error: $e');
+    return {
+      'success': false,
+      'message': e.toString(),
+    };
+  }
+}
+
+// Mark the root reminder of a customer as completed (status = 'completed')
+Future<Map<String, dynamic>> markReminderCompleted(String customerId) async {
+  try {
+    final token = await _getToken();
+    if (token == null) {
+      return {
+        'success': false,
+        'message': 'Authentication required. Please login again.',
+      };
+    }
+
+    final response = await _dio.patch(
+      '/customers/$customerId/reminder',
+      data: {
+        'status': 'completed',
+        'completedAt': DateTime.now().toIso8601String(),
+      },
+      options: Options(
+        headers: {'Authorization': 'Bearer $token'},
+      ),
+    );
+
+    if (response.data is Map<String, dynamic>) {
+      return response.data as Map<String, dynamic>;
+    } else {
+      return {
+        'success': false,
+        'message': 'Invalid response format',
+      };
+    }
+  } on DioException catch (e) {
+    print('❌ Dio Error: ${e.response?.data}');
+    return {
+      'success': false,
+      'message': e.response?.data?['message'] ?? 'Failed to update reminder status',
+    };
+  } catch (e) {
+    print('❌ Error: $e');
+    return {'success': false, 'message': e.toString()};
+  }
+}
+
+// Get all pending requirements (optionally filtered by category/search)
+Future<Map<String, dynamic>> getPendingRequirements({String? category, String? search}) async {
+  try {
+    final token = await _getToken();
+    if (token == null) {
+      return {
+        'success': false,
+        'message': 'Authentication required. Please login again.',
+        'data': [],
+      };
+    }
+
+    final queryParams = <String, dynamic>{};
+    if (category != null && category.isNotEmpty) queryParams['category'] = category;
+    if (search != null && search.isNotEmpty) queryParams['search'] = search;
+
+    final response = await _dio.get(
+      '/customers/requirements/pending',
+      queryParameters: queryParams.isEmpty ? null : queryParams,
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      ),
+    );
+
+    if (response.data is Map<String, dynamic>) {
+      return response.data as Map<String, dynamic>;
+    } else {
+      return {
+        'success': false,
+        'message': 'Invalid response format',
+        'data': [],
+      };
+    }
+  } on DioException catch (e) {
+    print('❌ Dio Error: ${e.response?.data}');
+    return {
+      'success': false,
+      'message': e.response?.data?['message'] ?? 'Failed to fetch pending requirements',
+      'data': [],
+    };
+  } catch (e) {
+    print('❌ Error: $e');
+    return {
+      'success': false,
+      'message': e.toString(),
+      'data': [],
+    };
+  }
+}
+
 
   // Get customer by ID - ONLY ONE VERSION (using Dio)
   Future<Map<String, dynamic>> getCustomerById(String id) async {

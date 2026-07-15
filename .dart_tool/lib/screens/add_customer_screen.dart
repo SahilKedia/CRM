@@ -57,18 +57,17 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
   // Visit state
   // Customer profile photo
-  File? _customerImageFile; // newly picked local photo
-  String? _existingCustomerImageUrl; // already-uploaded photo (edit mode)
+  File? _customerImageFile;
+  String? _existingCustomerImageUrl;
 
   // Visit state
-  String _conclusion = 'Pending'; // UI label
+  String _conclusion = 'Pending';
   List<File> _goldImages = [];
   List<File> _diamondImages = [];
   List<File> _polkiImages = [];
   TimeOfDay? _reminderTime;
 
   // existing (already-uploaded) image URLs for the visit currently
-  // shown in the "Add New Visit" form — shown as reference thumbnails.
   List<String> _existingGoldImageUrls = [];
   List<String> _existingDiamondImageUrls = [];
   List<String> _existingPolkiImageUrls = [];
@@ -93,34 +92,26 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
   Map<String, dynamic>? _duplicateMatch;
   Timer? _duplicateCheckDebounce;
 
-  // Title (Mr./Mrs./...) selector for the customer name
   String _selectedTitle = 'Mr.';
 
-  // ---------- Address: dynamic Country / State / City (package:country_state_city) ----------
-  // Street is intentionally OPTIONAL — if the exact address isn't known,
-  // saving just City, State, Country is enough (see _buildFullAddress()).
+  // Address
   List<csc.Country> _countryList = [];
   List<csc.State> _stateList = [];
   List<csc.City> _cityList = [];
 
-  String? _selectedCountryCode; // ISO code, e.g. "IN" — drives the state list
-  String? _selectedCountry; // display name, e.g. "India" — what gets saved
-  String? _selectedStateCode; // ISO code, e.g. "PB" — drives the city list
-  String? _selectedState; // display name, e.g. "Punjab" — what gets saved
-  String? _selectedCity; // display name, e.g. "Jalandhar" — what gets saved
+  String? _selectedCountryCode;
+  String? _selectedCountry;
+  String? _selectedStateCode;
+  String? _selectedState;
+  String? _selectedCity;
 
   bool _isLoadingCountries = false;
   bool _isLoadingStates = false;
   bool _isLoadingCities = false;
 
-  // If the customer's city isn't in the API list (rare, small towns),
-  // fall back to a free-text field instead of losing the data.
   bool _cityNotInList = false;
   final _customCityController = TextEditingController();
 
-  // Raw values parsed from an existing saved address (edit mode), kept
-  // until the country/state/city lists finish loading so we can match
-  // them up and select the right dropdown entries.
   String? _pendingCountryName;
   String? _pendingStateName;
   String? _pendingCityName;
@@ -129,7 +120,6 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
   bool _isLoadingBranches = false;
   bool _isLoading = false;
 
-  // Local flag to show/hide the new visit form
   bool _showNewVisitForm = false;
 
   final ImagePicker _picker = ImagePicker();
@@ -181,13 +171,14 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     super.initState();
     _customerNameController.addListener(_forceUppercaseName);
     _loadBranches();
-    _loadCountries(); // ✅ NEW: fetch full countries list (then cascades to states/cities)
     _loadOptions().then((_) {
       if (_isEditMode) {
         _prefillForEdit(widget.customerToEdit!);
       } else {
         _visitNumberController.text = '1';
       }
+
+      _loadCountries();
 
       if (widget.isAddingVisit && _isEditMode) {
         _showNewVisitForm = true;
@@ -254,7 +245,6 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
         _isLoadingCountries = false;
       });
 
-      // Decide which country to select first.
       csc.Country? initialCountry;
       if (_pendingCountryName != null) {
         initialCountry = _countryList.firstWhere(
@@ -262,7 +252,6 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
           orElse: () => _countryList.firstWhere((c) => c.isoCode == 'IN', orElse: () => countries.first),
         );
       } else if (!_isEditMode) {
-        // Sensible default for a brand-new customer: India.
         initialCountry = _countryList.firstWhere(
           (c) => c.isoCode == 'IN',
           orElse: () => countries.first,
@@ -305,7 +294,6 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
         );
         if (match.isNotEmpty) initialState = match.first;
       } else if (!_isEditMode && countryIsoCode == 'IN') {
-        // Sensible default for a brand-new customer: Punjab.
         final match = states.where((s) => s.name == 'Punjab');
         if (match.isNotEmpty) initialState = match.first;
       }
@@ -342,7 +330,6 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
         );
         if (match.isNotEmpty) matchedCityName = match.first.name;
       } else if (!_isEditMode) {
-        // Sensible default for a brand-new customer: Jalandhar.
         final match = cities.where((c) => c.name == 'Jalandhar');
         if (match.isNotEmpty) matchedCityName = match.first.name;
       }
@@ -353,13 +340,10 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
           _selectedCity = matchedCityName;
           _cityNotInList = false;
         } else if (_pendingCityName != null && _pendingCityName!.isNotEmpty) {
-          // The saved city wasn't found in the API list (small town / typo) —
-          // keep it visible as free text instead of silently dropping it.
           _cityNotInList = true;
           _customCityController.text = _pendingCityName!;
           _selectedCity = null;
         }
-        // Pending values have now been applied (or given up on) — clear them.
         _pendingCountryName = null;
         _pendingStateName = null;
         _pendingCityName = null;
@@ -423,8 +407,6 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     });
   }
 
-  // Resolves whatever the user picked for the city into a plain string —
-  // either the dropdown selection or the free-text fallback.
   String _resolvedCityName() {
     if (_cityNotInList) return _customCityController.text.trim();
     return _selectedCity ?? '';
@@ -447,9 +429,6 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
       _customerNameController.text = rawName.toUpperCase();
     }
 
-    // Parse the stored "street, city, state, country" address string.
-    // City/state/country get matched against the live API lists once they
-    // finish loading (see _loadCountries/_loadStates/_loadCities above).
     _parseAddressForEdit(c['address']?.toString() ?? '');
 
     _existingCustomerImageUrl = c['customerImage']?.toString();
@@ -583,12 +562,6 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     }
   }
 
-  // Best-effort parse of a saved "street, city, state, country" address
-  // string. Street is optional, so a saved address might just be
-  // "Jalandhar, Punjab, India" (3 parts) or occasionally "-, Jalandhar,
-  // Punjab, India" from older records — either is handled below. The
-  // city/state/country strings are stashed as "pending" and matched
-  // against the live API lists once they've loaded.
   void _parseAddressForEdit(String rawAddress) {
     if (rawAddress.trim().isEmpty) {
       _addressController.text = '';
@@ -605,23 +578,16 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
       final state = parts.removeLast();
       final city = parts.removeLast();
       final street = parts.join(', ');
-      // Treat a lone "-" (placeholder some old records used) as empty.
       _addressController.text = (street == '-') ? '' : street;
 
       _pendingCountryName = country;
       _pendingStateName = state;
       _pendingCityName = city;
     } else {
-      // Not enough parts to confidently split — keep the whole string as
-      // the street address and leave country/state/city to their defaults.
       _addressController.text = rawAddress;
     }
   }
 
-  // Combines the street field (optional) + city/state/country into the
-  // single address string that gets saved. If the street is blank, the
-  // leading "-, " is skipped entirely — e.g. "Jalandhar, Punjab, India"
-  // instead of "-, Jalandhar, Punjab, India".
   String _buildFullAddress() {
     final street = _addressController.text.trim();
     final city = _resolvedCityName();
@@ -1080,7 +1046,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
         await notificationService.cancelReminder(customerId);
       }
     } catch (e) {
-      // Silent — reminder scheduling isn't critical enough to block save.
+      // Silent
     }
   }
 
@@ -1143,6 +1109,72 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
           backgroundColor: AppColors.success,
         ),
       );
+    }
+  }
+
+  // ---------- MARK REQUIREMENT AS FULFILLED ----------
+  Future<void> _confirmFulfillRequirement(Map<String, dynamic> visit, int index) async {
+    final visitNumber = index + 1;
+    final requirementText = visit['requirement']?.toString() ?? '';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mark Requirement Available'),
+        content: Text(
+          'Mark "$requirementText" as available in stock?\n\nThis will move it out of the pending requirements list.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Mark Available', style: TextStyle(color: AppColors.success)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final customerId = widget.customerToEdit!['_id'].toString();
+      final response = await ApiService().fulfillRequirement(customerId, visitNumber);
+
+      if (response['success'] == true) {
+        setState(() {
+          _visits[index]['requirementStatus'] = 'fulfilled';
+          _isLoading = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Requirement marked as available. Contact the customer!'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        }
+      } else {
+        setState(() => _isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: ${response['message'] ?? 'Failed to update requirement'}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -1225,8 +1257,6 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
       return;
     }
 
-    // Street is optional, but City / State / Country must be picked so we
-    // always have a usable address on the backend.
     if (_selectedCountry == null || _selectedState == null || _resolvedCityName().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1349,7 +1379,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
         if (email.isNotEmpty) {
           customerData['email'] = email;
         }
-
+        // Requirement is NOT included here because it's visit-specific.
         if (reminderDateStr != null && reminderDateStr.isNotEmpty) {
           customerData['reminderDate'] = reminderDateStr;
         }
@@ -1383,6 +1413,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
           customerImage: _customerImageFile,
         );
       } else {
+        // New customer – includes first visit
         final customerData = <String, dynamic>{
           'name': _buildFullName(),
           'phone': _phoneController.text.trim(),
@@ -1741,7 +1772,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                       ),
                     ],
                     const SizedBox(height: 16),
-                    _buildAddressSection(), // ✅ redesigned, single card, optional street
+                    _buildAddressSection(),
                     const SizedBox(height: 14),
                     _buildDropdownField<String>(
                       label: 'Branch *',
@@ -1773,6 +1804,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                     ),
                     const SizedBox(height: 24),
 
+                    // Visit History (only in edit mode)
                     if (_isEditMode && _visits.isNotEmpty) ...[
                       _buildSectionHeader('Visit History (${_visits.length} visits)'),
                       const SizedBox(height: 4),
@@ -1789,6 +1821,8 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                       const SizedBox(height: 24),
                     ],
 
+                    // --- EDIT CUSTOMER (without adding visit) ---
+                    // Requirement field is NOT shown here.
                     if (_isEditMode && !_isAddingVisit) ...[
                       _buildSectionHeader('Staff Information'),
                       const SizedBox(height: 8),
@@ -1808,6 +1842,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                       const SizedBox(height: 24),
                     ],
 
+                    // --- ADD NEW VISIT (to existing customer) ---
                     if (_isAddingVisit) ...[
                       _buildSectionHeader('New Visit #${_visits.length + 1}'),
                       const SizedBox(height: 16),
@@ -1878,6 +1913,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                         onChanged: (value) => setState(() => _conclusion = value!),
                       ),
                       const SizedBox(height: 16),
+                      // Requirement field for the new visit
                       _buildSectionHeader('Requirement'),
                       const SizedBox(height: 8),
                       CrmTextField(
@@ -2000,6 +2036,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                       const SizedBox(height: 16),
                     ],
 
+                    // --- EDIT CUSTOMER (additional info) ---
                     if (!_isAddingVisit && _isEditMode) ...[
                       _buildSectionHeader('Additional Information'),
                       const SizedBox(height: 16),
@@ -2066,6 +2103,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                       const SizedBox(height: 16),
                     ],
 
+                    // --- ADD NEW CUSTOMER (includes first visit) ---
                     if (!_isEditMode) ...[
                       _buildSectionHeader('Visit Details'),
                       const SizedBox(height: 16),
@@ -2134,6 +2172,17 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                           DropdownMenuItem(value: 'On Approval', child: Text('On Approval')),
                         ],
                         onChanged: (value) => setState(() => _conclusion = value!),
+                      ),
+                      const SizedBox(height: 16),
+                      // Requirement field for the first visit
+                      _buildSectionHeader('Requirement'),
+                      const SizedBox(height: 8),
+                      CrmTextField(
+                        label: 'Requirement',
+                        hint: 'Specific requirements',
+                        prefixIcon: Icons.checklist,
+                        controller: _requirementController,
+                        maxLines: 2,
                       ),
                       const SizedBox(height: 16),
                       _buildSectionHeader('Staff Information'),
@@ -2277,9 +2326,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     );
   }
 
-  // ✅ NEW: single reusable dropdown style used EVERYWHERE in this screen.
-  // One OutlineInputBorder only — no extra wrapping Container border, which
-  // is what was causing the "double border" look before.
+  // Reusable dropdown field
   Widget _buildDropdownField<T>({
     required String label,
     required IconData icon,
@@ -2488,9 +2535,6 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     );
   }
 
-  // ✅ REDESIGNED: Address now lives in one clean card. Street is optional —
-  // a small live preview at the bottom shows exactly what gets saved, so
-  // it's obvious that skipping the street still saves "City, State, Country".
   Widget _buildAddressSection() {
     final preview = _buildFullAddress();
     return Container(
@@ -2522,8 +2566,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
             prefixIcon: Icons.home_outlined,
             controller: _addressController,
             maxLines: 2,
-            // No validator — street is optional by design.
-            onChanged: (_) => setState(() {}), // refresh live preview below
+            onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 12),
           _buildDropdownField<String>(
@@ -2670,6 +2713,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     final conclusionServer = visit['conclusion']?.toString() ?? 'Pending';
     final conclusionUI = _mapConclusionToUI(conclusionServer);
     final requirement = visit['requirement']?.toString() ?? '';
+    final requirementStatus = visit['requirementStatus']?.toString() ?? 'none';
     final helper = visit['helper']?.toString() ?? '';
     final whoAttendName = _getEmployeeName(visit['whoAttend']);
     final goldImages = _parseImageUrls(visit['goldImages']);
@@ -2744,7 +2788,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                 if (gold.isNotEmpty) _buildDetailRow('Gold', gold),
                 if (diamond.isNotEmpty) _buildDetailRow('Diamond', diamond),
                 if (polki.isNotEmpty) _buildDetailRow('Polki', polki),
-                if (requirement.isNotEmpty) _buildDetailRow('Requirement', requirement),
+                if (requirement.isNotEmpty) _buildRequirementRow(requirement, requirementStatus, visit, index),
                 if (helper.isNotEmpty) _buildDetailRow('Helper', helper),
                 _buildDetailRow('Attended by', whoAttendName),
                 if (goldImages.isNotEmpty) _buildImageRow('Gold Images', goldImages),
@@ -2789,6 +2833,79 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
       ),
     );
   }
+
+Widget _buildRequirementRow(String requirement, String status, Map<String, dynamic> visit, int index) {
+  final isPending = status == 'pending';
+  final isFulfilled = status == 'fulfilled';
+
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(
+          width: 100,
+          child: Text('Requirement:', style: TextStyle(fontWeight: FontWeight.w500, color: AppColors.textSecondary)),
+        ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Requirement text + status chip inline
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      requirement,
+                      style: const TextStyle(color: AppColors.textPrimary),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Status Chip
+                  Chip(
+                    label: Text(
+                      isFulfilled ? 'Available' : 'Pending',
+                      style: TextStyle(
+                        color: isFulfilled ? Colors.white : Colors.orange[800],
+                        fontWeight: FontWeight.w600,
+                        fontSize: 11,
+                      ),
+                    ),
+                    backgroundColor: isFulfilled ? AppColors.success : Colors.orange.withOpacity(0.2),
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ],
+              ),
+              // "Mark Available" link for pending requirements
+              if (isPending) ...[
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    GestureDetector(
+                      onTap: () => _confirmFulfillRequirement(visit, index),
+                      child: const Text(
+                        'Mark Available',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildImageRow(String label, List<String> imageUrls) {
     return Padding(

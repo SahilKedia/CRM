@@ -18,6 +18,8 @@ import 'user_detail_screen.dart';
 import '../services/notification_service.dart';
 import '../services/auth_service.dart';
 import 'reminders_screen.dart';
+import 'pending_requirements_screen.dart';   // ✅ add
+
 
 class DashboardScreen extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -38,6 +40,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _totalEmployees = 0;
   int _totalCustomers = 0;
   int _totalBranches = 0;
+  int _pendingRequirementsCount = 0;   // ✅ add
+
 
   List<Map<String, dynamic>> _customers = [];
   List<Map<String, dynamic>> _employees = [];
@@ -155,7 +159,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
   }
+   Future<void> _fetchPendingRequirementsCount() async {
+  try {
+    final apiService = ApiService();
+    final response = await apiService.getPendingRequirements();
+    if (response['success'] == true) {
+      final data = response['data'] as List? ?? [];
+      setState(() => _pendingRequirementsCount = data.length);
+    }
+  } catch (e) {
+    // silent — matches _fetchBranches() pattern
+  }
+}
 
+
+void _navigateToPendingRequirements() async {
+  await Navigator.push(
+    context,
+    MaterialPageRoute(builder: (_) => const PendingRequirementsScreen()),
+  );
+  _fetchPendingRequirementsCount(); // refresh badge after returning
+}
   // ------------------------------------------------------------
   // Data loading
   // ------------------------------------------------------------
@@ -170,6 +194,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _fetchEmployees(),
         _fetchCustomers(),
         _fetchBranches(),
+          _fetchPendingRequirementsCount(),   // ✅ add
+
       ]);
 
       setState(() {
@@ -971,6 +997,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   onTap: _navigateToReminders,
                   badge: _countUpcomingReminders() > 0,
                 ),
+
+                // ✅ add
+_buildStatCard(
+  'Requirements',
+  '$_pendingRequirementsCount',
+  Icons.inventory_2_rounded,
+  const Color(0xFF00BCD4),
+  onTap: _navigateToPendingRequirements,
+  badge: _pendingRequirementsCount > 0,
+),
               ],
             ),
             const SizedBox(height: 28),
