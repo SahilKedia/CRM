@@ -36,41 +36,27 @@ const VisitSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    // approval: {
-    //   type: String,
-    //   enum: ["pending", "approved", "rejected"],
-    //   default: "pending",
-    // },
-    // conclusion: {
-    //   type: String,
-    //   enum: ["Pending", "Sold", "Not Interested", "Follow-up"],
-    //   default: "Pending",
-    // },
-      requirement: {
-  type: String,
-  trim: true,
-},
-requirementStatus: {
-  type: String,
-  enum: ["none", "pending", "fulfilled"],
-  default: "none",
-},
-requirementFulfilledAt: {
-  type: Date,
-  default: null,
-},
-conclusion: {
-  type: String,
-  enum: [
-    "pending",
-    "sold",
-    "just see",
-    "shortlisted",
-    "on approval",
-    "on order",
-  ],
-  default: "pending",
-},
+    requirementStatus: {
+      type: String,
+      enum: ["none", "pending", "fulfilled"],
+      default: "none",
+    },
+    requirementFulfilledAt: {
+      type: Date,
+      default: null,
+    },
+    conclusion: {
+      type: String,
+      enum: [
+        "pending",
+        "sold",
+        "just see",
+        "shortlisted",
+        "on approval",
+        "on order",
+      ],
+      default: "pending",
+    },
     whoAttend: {
       type: String,
       trim: true,
@@ -78,17 +64,6 @@ conclusion: {
     helper: {
       type: String,
       trim: true,
-    },
-    // Reminder specific to this visit (optional)
-    reminder: {
-      date: Date,
-      note: String,
-      status: {
-        type: String,
-        enum: ["pending", "completed"],
-        default: "pending",
-      },
-      completedAt: Date,
     },
   },
   {
@@ -181,32 +156,22 @@ const CustomerSchema = new mongoose.Schema(
     diamondImages: [String],
     polkiImages: [String],
     requirement: String,
-    // approval: {
-    //   type: String,
-    //   enum: ["pending", "approved", "rejected"],
-    //   default: "pending",
-    // },
-    // conclusion: {
-    //   type: String,
-    //   enum: ["Pending", "Sold", "Not Interested", "Follow-up"],
-    //   default: "Pending",
-    // },
-conclusion: {
-  type: String,
-  enum: [
-    "pending",
-    "sold",
-    "just see",
-    "shortlisted",
-    "on approval",
-    "on order",
-  ],
-  default: "pending",
-},
+    conclusion: {
+      type: String,
+      enum: [
+        "pending",
+        "sold",
+        "just see",
+        "shortlisted",
+        "on approval",
+        "on order",
+      ],
+      default: "pending",
+    },
     whoAttend: String,
     helper: String,
 
-    // Top‑level reminder – can be used if needed, but we mostly use per‑visit reminders.
+    // Top‑level reminder – this is the ONLY reminder used by the app.
     reminder: {
       date: Date,
       note: String,
