@@ -59,6 +59,7 @@ exports.addCustomer = async (req, res) => {
       referenceNote,
       referredBy,
       assignedTo,
+      additionalInfo, // ✅ ADDED
     } = req.body;
 
     if (!name || !name.trim()) {
@@ -106,6 +107,12 @@ exports.addCustomer = async (req, res) => {
       ? `uploads/customers/${customerImageFile.filename}`
       : undefined;
 
+    // ✅ Handle additional info image (single image, optional)
+    const additionalInfoImageFile = req.files?.additionalInfoImage?.[0];
+    const additionalInfoImage = additionalInfoImageFile
+      ? `uploads/customers/${additionalInfoImageFile.filename}`
+      : undefined;
+
     // Handle reminder
     let finalReminder = undefined;
     if (reminderDate) {
@@ -138,7 +145,6 @@ exports.addCustomer = async (req, res) => {
       diamondImages: diamondImages.length > 0 ? diamondImages : undefined,
       polkiImages: polkiImages.length > 0 ? polkiImages : undefined,
       requirement: trimmedRequirement,
-      // ✅ NEW: track whether this requirement is pending / fulfilled
       requirementStatus: trimmedRequirement ? "pending" : "none",
       conclusion: conclusion || "pending",
       whoAttend: whoAttend?.trim() || undefined,
@@ -152,6 +158,8 @@ exports.addCustomer = async (req, res) => {
       phone: phone?.trim() || undefined,
       address: address?.trim() || undefined,
       customerImage: customerImage,
+      additionalInfo: additionalInfo?.trim() || undefined, // ✅ ADDED
+      additionalInfoImage: additionalInfoImage, // ✅ ADDED
       branch: finalBranch,
       visits: [firstVisit],
       visitDate: firstVisit.visitDate,
@@ -266,7 +274,6 @@ exports.addVisit = async (req, res) => {
       diamondImages: diamondImages.length ? diamondImages : undefined,
       polkiImages: polkiImages.length ? polkiImages : undefined,
       requirement: trimmedRequirement,
-      // ✅ NEW
       requirementStatus: trimmedRequirement ? "pending" : "none",
       conclusion: conclusion || "pending",
       whoAttend: whoAttend?.trim() || undefined,
@@ -308,7 +315,7 @@ exports.addVisit = async (req, res) => {
   }
 };
 
-// Update an EXISTING visit (e.g. status change from "just see" -> "sold")
+// Update an EXISTING visit
 exports.updateVisit = async (req, res) => {
   try {
     const { id, visitNumber } = req.params;
@@ -386,34 +393,21 @@ exports.updateVisit = async (req, res) => {
     if (diamond !== undefined) visit.diamond = diamond;
     if (polki !== undefined) visit.polki = polki;
 
-    // ✅ NEW: whenever requirement text changes, keep requirementStatus in sync
-    // if (requirement !== undefined) {
-    //   const trimmed = requirement.trim();
-    //   visit.requirement = trimmed || undefined;
-    //   // Don't downgrade an already-fulfilled requirement just because
-    //   // the text was re-saved unchanged; only reset to pending/none
-    //   // when the text actually changes.
-    //   if (trimmed !== (visit.requirement || "")) {
-    //     visit.requirementStatus = trimmed ? "pending" : "none";
-    //   } else if (!trimmed) {
-    //     visit.requirementStatus = "none";
-    //   }
-    // }
     if (requirement !== undefined) {
-  const trimmed = requirement.trim();
-  const previousText = visit.requirement;
-  const previousStatus = visit.requirementStatus;
+      const trimmed = requirement.trim();
+      const previousText = visit.requirement;
+      const previousStatus = visit.requirementStatus;
 
-  visit.requirement = trimmed || undefined;
+      visit.requirement = trimmed || undefined;
 
-  if (!trimmed) {
-    visit.requirementStatus = "none";
-  } else if (previousStatus === "fulfilled" && previousText === trimmed) {
-    visit.requirementStatus = "fulfilled";
-  } else {
-    visit.requirementStatus = "pending";
-  }
-}
+      if (!trimmed) {
+        visit.requirementStatus = "none";
+      } else if (previousStatus === "fulfilled" && previousText === trimmed) {
+        visit.requirementStatus = "fulfilled";
+      } else {
+        visit.requirementStatus = "pending";
+      }
+    }
 
     if (conclusion !== undefined) visit.conclusion = conclusion;
     if (whoAttend !== undefined) visit.whoAttend = whoAttend.trim();
@@ -459,7 +453,7 @@ exports.updateVisit = async (req, res) => {
   }
 };
 
-// ✅ NEW: Mark a visit's requirement as fulfilled (product now in stock)
+// ✅ Mark a visit's requirement as fulfilled
 exports.fulfillRequirement = async (req, res) => {
   try {
     const { id, visitNumber } = req.params;
@@ -498,8 +492,6 @@ exports.fulfillRequirement = async (req, res) => {
     customer.markModified("visits");
     await customer.save();
 
-    // TODO: hook SMS/WhatsApp/email notification here to contact the customer
-
     res.json({
       success: true,
       message: "Requirement marked as fulfilled",
@@ -514,10 +506,10 @@ exports.fulfillRequirement = async (req, res) => {
   }
 };
 
-// ✅ NEW: Get all pending requirements across customers ("who wants this")
+// ✅ Get all pending requirements across customers
 exports.getPendingRequirements = async (req, res) => {
   try {
-    const { category, search } = req.query; // category: gold | diamond | polki
+    const { category, search } = req.query;
     const filter = {};
     if (req.user && req.user.role === "admin" && req.user.branch) {
       filter.branch = req.user.branch;
@@ -772,17 +764,32 @@ exports.getDistinctCommunities = async (req, res) => {
   }
 };
 
-// Update Customer
+// ==================== UPDATE CUSTOMER (FIXED) ====================
+
 exports.updateCustomer = async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = { ...req.body };
 
+    // Handle customer image
     const newCustomerImageFile = req.files?.customerImage?.[0];
     if (newCustomerImageFile) {
       updateData.customerImage = `uploads/customers/${newCustomerImageFile.filename}`;
     }
 
+    // ✅ Handle additional info image
+    const newAdditionalInfoImageFile = req.files?.additionalInfoImage?.[0];
+    if (newAdditionalInfoImageFile) {
+      updateData.additionalInfoImage = `uploads/customers/${newAdditionalInfoImageFile.filename}`;
+    } else {
+      // If the frontend sends null or empty string, remove the image
+      if (updateData.additionalInfoImage === null || updateData.additionalInfoImage === '') {
+        updateData.additionalInfoImage = null;
+      }
+      // If additionalInfoImage is not in the request at all, keep it as is
+    }
+
+    // Handle reminder logic
     const hasReminderDate = updateData.reminderDate !== undefined;
     const hasReminderMessage = updateData.reminderMessage !== undefined;
     const hasReminderStatus = updateData.reminderStatus !== undefined;
@@ -842,6 +849,7 @@ exports.updateCustomer = async (req, res) => {
       delete updateData.clearReminder;
     }
 
+    // Handle optional fields
     if (updateData.birthday !== undefined) {
       updateData.birthday = updateData.birthday?.trim() || undefined;
     }
@@ -854,6 +862,10 @@ exports.updateCustomer = async (req, res) => {
     if (updateData.community !== undefined) {
       updateData.community = updateData.community?.trim() || undefined;
     }
+    // ✅ Handle additionalInfo
+    if (updateData.additionalInfo !== undefined) {
+      updateData.additionalInfo = updateData.additionalInfo?.trim() || undefined;
+    }
 
     const existingCustomer = await Customer.findById(id);
     if (!existingCustomer) {
@@ -863,20 +875,10 @@ exports.updateCustomer = async (req, res) => {
       });
     }
 
-    // if (req.user && req.user.role === "admin" && req.user.branch) {
-    //   if (existingCustomer.branch.toString() !== req.user.branch.toString()) {
-    //     return res.status(403).json({
-    //       success: false,
-    //       message: "You can only update customers in your branch",
-    //     });
-    //   }
-    //   delete updateData.branch;
-    // }
-
-    // delete updateData.visits;
-    // delete updateData.numberOfVisit;
+    // Branch permission check
     if (req.user && req.user.role === "admin" && req.user.branch) {
-      if (existingCustomer.branch.toString() !== req.user.branch.toString()) {
+      const customerBranchId = existingCustomer.branch?._id?.toString() || existingCustomer.branch?.toString();
+      if (customerBranchId !== req.user.branch.toString()) {
         return res.status(403).json({
           success: false,
           message: "You can only update customers in your branch",
@@ -885,12 +887,7 @@ exports.updateCustomer = async (req, res) => {
       delete updateData.branch;
     }
 
-    // ✅ NEW: keep the latest visit's requirement/requirementStatus in sync
-    // whenever `requirement` is edited from the plain "Edit Customer" screen
-    // (the "Add Visit" / "Edit Visit" flows already handle this themselves).
-    // Without this, `requirement` only ever lands on the top-level customer
-    // document — and getPendingRequirements() scans visits[].requirementStatus,
-    // so it silently returns a count of 0 even though the text was saved.
+    // Handle requirement update
     if (updateData.requirement !== undefined) {
       const trimmedRequirement = updateData.requirement?.trim() || undefined;
 
@@ -905,7 +902,6 @@ exports.updateCustomer = async (req, res) => {
         if (!trimmedRequirement) {
           latestVisit.requirementStatus = "none";
         } else if (previousStatus === "fulfilled" && previousText === trimmedRequirement) {
-          // text unchanged on an already-fulfilled requirement — don't reopen it
           latestVisit.requirementStatus = "fulfilled";
         } else {
           latestVisit.requirementStatus = "pending";
@@ -918,6 +914,7 @@ exports.updateCustomer = async (req, res) => {
       updateData.requirement = trimmedRequirement;
     }
 
+    // Remove fields that shouldn't be updated directly
     delete updateData.visits;
     delete updateData.numberOfVisit;
 
@@ -1132,7 +1129,6 @@ module.exports = {
   getDistinctProfessions: exports.getDistinctProfessions,
   getDistinctCommunities: exports.getDistinctCommunities,
   deleteVisit: exports.deleteVisit,
-  // ✅ NEW exports
   fulfillRequirement: exports.fulfillRequirement,
   getPendingRequirements: exports.getPendingRequirements,
 };

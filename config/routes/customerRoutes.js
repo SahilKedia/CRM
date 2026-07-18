@@ -17,10 +17,12 @@ const {
   addVisit,
   updateVisit,
   getVisitByNumber,
-   deleteVisit,
-   fulfillRequirement,        // ✅ NEW
-  getPendingRequirements
-  // createSpecialDayNotifications,  // NOTIFICATION: commented
+  deleteVisit,
+  fulfillRequirement,
+  getPendingRequirements,
+  getDistinctProfessions,
+  getDistinctCommunities,
+  getCustomerReferralCircle,
 } = require("../controllers/customerController");
 
 // ------------------------------------------------------------------
@@ -36,7 +38,6 @@ console.log("📋 checkDuplicateCustomer:", typeof checkDuplicateCustomer === "f
 console.log("📋 addVisit:", typeof addVisit === "function" ? "✅" : "❌");
 console.log("📋 updateVisit:", typeof updateVisit === "function" ? "✅" : "❌");
 console.log("📋 getVisitByNumber:", typeof getVisitByNumber === "function" ? "✅" : "❌");
-// console.log("📋 createSpecialDayNotifications:", typeof createSpecialDayNotifications === "function" ? "✅" : "❌");
 console.log("📋 fulfillRequirement:", typeof fulfillRequirement === "function" ? "✅" : "❌");
 console.log("📋 getPendingRequirements:", typeof getPendingRequirements === "function" ? "✅" : "❌");
 
@@ -56,24 +57,37 @@ function isBlockedByBranch(req, customer) {
 // 3. Routes – REGISTER ONLY IF HANDLER IS A FUNCTION
 // ------------------------------------------------------------------
 
-// Duplicate check
+// ==================== DISTINCT VALUES ====================
+router.get('/distinct/professions', protect, getDistinctProfessions);
+router.get('/distinct/communities', protect, getDistinctCommunities);
+
+// ==================== DUPLICATE CHECK ====================
 if (typeof checkDuplicateCustomer === "function") {
   router.get("/check-duplicate", protect, checkDuplicateCustomer);
 } else {
   console.error("❌ checkDuplicateCustomer is not a function – route skipped");
 }
 
-// Create customer
+// ==================== PENDING REQUIREMENTS ====================
+// Get all pending requirements (must come before "/:id" routes)
+if (typeof getPendingRequirements === "function") {
+  router.get("/requirements/pending", protect, getPendingRequirements);
+} else {
+  console.error("❌ getPendingRequirements is not a function – route skipped");
+}
+
+// ==================== CREATE CUSTOMER ====================
 if (typeof addCustomer === "function") {
   router.post(
     "/",
     protect,
     restrictTo("admin"),
-   upload.fields([
+    upload.fields([
       { name: "goldImages", maxCount: 100 },
       { name: "diamondImages", maxCount: 100 },
       { name: "polkiImages", maxCount: 100 },
       { name: "customerImage", maxCount: 1 },
+      { name: "additionalInfoImage", maxCount: 1 } // ✅ ADDED
     ]),
     upload.handleUploadErrors,
     addCustomer
@@ -82,39 +96,52 @@ if (typeof addCustomer === "function") {
   console.error("❌ addCustomer is not a function – route skipped");
 }
 
-  // Delete a specific visit
-router.delete("/:id/visits/:visitNumber", protect, restrictTo("admin"), async (req, res) => {
-  try {
-    const { id, visitNumber } = req.params;
-    const customer = await Customer.findById(id);
-    if (!customer) {
-      return res.status(404).json({ success: false, message: 'Customer not found' });
-    }
-    // Optional: branch check
-    if (isBlockedByBranch(req, customer)) {
-      return res.status(403).json({
-        success: false,
-        message: "You can only delete visits for customers in your branch",
-      });
-    }
-    const visitIndex = customer.visits.findIndex(v => v.visitNumber === parseInt(visitNumber));
-    if (visitIndex === -1) {
-      return res.status(404).json({ success: false, message: `Visit #${visitNumber} not found` });
-    }
-    // Remove the visit
-    customer.visits.splice(visitIndex, 1);
-    await customer.save();
-    res.json({
-      success: true,
-      message: `Visit #${visitNumber} deleted successfully`,
-      data: customer
-    });
-  } catch (err) {
-    console.error('❌ Error deleting visit:', err);
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-// Add visit (POST to add a new visit to an existing customer)
+// ==================== GET ALL CUSTOMERS ====================
+if (typeof getCustomers === "function") {
+  router.get("/", protect, getCustomers);
+} else {
+  console.error("❌ getCustomers is not a function – route skipped");
+}
+
+// ==================== GET CUSTOMER BY ID ====================
+if (typeof getCustomerById === "function") {
+  router.get("/:id", protect, getCustomerById);
+} else {
+  console.error("❌ getCustomerById is not a function – route skipped");
+}
+
+// ==================== GET REFERRAL CIRCLE ====================
+if (typeof getCustomerReferralCircle === "function") {
+  router.get("/:id/referral-circle", protect, getCustomerReferralCircle);
+} else {
+  console.error("❌ getCustomerReferralCircle is not a function – route skipped");
+}
+
+// ==================== UPDATE CUSTOMER ====================
+if (typeof updateCustomer === "function") {
+  router.put(
+    "/:id",
+    protect,
+    restrictTo("admin"),
+    upload.fields([
+      { name: "customerImage", maxCount: 1 },
+      { name: "additionalInfoImage", maxCount: 1 } // ✅ ADDED
+    ]),
+    upload.handleUploadErrors,
+    updateCustomer
+  );
+} else {
+  console.error("❌ updateCustomer is not a function – route skipped");
+}
+
+// ==================== DELETE CUSTOMER ====================
+if (typeof deleteCustomer === "function") {
+  router.delete("/:id", protect, restrictTo("admin"), deleteCustomer);
+} else {
+  console.error("❌ deleteCustomer is not a function – route skipped");
+}
+
+// ==================== ADD VISIT TO CUSTOMER ====================
 if (typeof addVisit === "function") {
   router.post(
     "/:id/visits",
@@ -132,7 +159,7 @@ if (typeof addVisit === "function") {
   console.error("❌ addVisit is not a function – route skipped");
 }
 
-// Update visit (PUT to edit an existing visit)
+// ==================== UPDATE VISIT ====================
 if (typeof updateVisit === "function") {
   router.put(
     "/:id/visits/:visitNumber",
@@ -150,7 +177,7 @@ if (typeof updateVisit === "function") {
   console.error("❌ updateVisit is not a function – route skipped");
 }
 
-// Get specific visit by visit number
+// ==================== GET SPECIFIC VISIT ====================
 if (typeof getVisitByNumber === "function") {
   router.get("/:id/visits/:visitNumber", protect, getVisitByNumber);
 } else {
@@ -163,15 +190,44 @@ if (typeof getVisitByNumber === "function") {
   });
 }
 
-
-// Get all pending requirements (must come before "/:id" routes)
-if (typeof getPendingRequirements === "function") {
-  router.get("/requirements/pending", protect, getPendingRequirements);
+// ==================== DELETE SPECIFIC VISIT ====================
+if (typeof deleteVisit === "function") {
+  router.delete("/:id/visits/:visitNumber", protect, restrictTo("admin"), deleteVisit);
 } else {
-  console.error("❌ getPendingRequirements is not a function – route skipped");
+  console.error("❌ deleteVisit is not a function – using fallback handler");
+  router.delete("/:id/visits/:visitNumber", protect, restrictTo("admin"), async (req, res) => {
+    try {
+      const { id, visitNumber } = req.params;
+      const customer = await Customer.findById(id);
+      if (!customer) {
+        return res.status(404).json({ success: false, message: 'Customer not found' });
+      }
+      if (isBlockedByBranch(req, customer)) {
+        return res.status(403).json({
+          success: false,
+          message: "You can only delete visits for customers in your branch",
+        });
+      }
+      const visitIndex = customer.visits.findIndex(v => v.visitNumber === parseInt(visitNumber));
+      if (visitIndex === -1) {
+        return res.status(404).json({ success: false, message: `Visit #${visitNumber} not found` });
+      }
+      customer.visits.splice(visitIndex, 1);
+      customer.numberOfVisit = customer.visits.length;
+      await customer.save();
+      res.json({
+        success: true,
+        message: `Visit #${visitNumber} deleted successfully`,
+        data: customer
+      });
+    } catch (err) {
+      console.error('❌ Error deleting visit:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
 }
 
-// Mark a visit's requirement as fulfilled
+// ==================== FULFILL REQUIREMENT ====================
 if (typeof fulfillRequirement === "function") {
   router.patch(
     "/:id/visits/:visitNumber/fulfill-requirement",
@@ -183,9 +239,8 @@ if (typeof fulfillRequirement === "function") {
   console.error("❌ fulfillRequirement is not a function – route skipped");
 }
 
+// ==================== REMINDER ROUTES ====================
 
-router.get('/distinct/professions', protect, customerController.getDistinctProfessions);
-router.get('/distinct/communities',  protect, customerController.getDistinctCommunities);
 // Complete reminder for a specific visit
 router.put("/:id/visits/:visitNumber/reminder/complete", protect, async (req, res) => {
   try {
@@ -212,8 +267,6 @@ router.put("/:id/visits/:visitNumber/reminder/complete", protect, async (req, re
     visit.reminder.date = null;
     visit.reminder.note = '';
     await customer.save();
-    // NOTIFICATION: commented out notification deletion
-    // await Notification.deleteMany({ customerId: customer._id, visitNumber: parseInt(visitNumber), type: 'reminder' });
     res.json({
       success: true,
       message: `Reminder for Visit #${visitNumber} completed and cleared`,
@@ -350,46 +403,5 @@ router.put("/:id/visits/:visitNumber/reminder", protect, restrictTo("admin"), as
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
-// NOTIFICATION: Special‑day notifications route commented out
-// if (typeof createSpecialDayNotifications === "function") {
-//   router.post("/notifications/special-days", protect, restrictTo("admin"), createSpecialDayNotifications);
-// } else {
-//   console.error("❌ createSpecialDayNotifications is not a function – route skipped");
-// }
-
-// GET all & by ID
-if (typeof getCustomers === "function") {
-  router.get("/", protect, getCustomers);
-} else {
-  console.error("❌ getCustomers is not a function – route skipped");
-}
-if (typeof getCustomerById === "function") {
-  router.get("/:id", protect, getCustomerById);
-} else {
-  console.error("❌ getCustomerById is not a function – route skipped");
-}
-
-// PUT & DELETE
-// if (typeof updateCustomer === "function") {
-//   router.put("/:id", protect, restrictTo("admin"), updateCustomer);
-// } else {
-  if (typeof updateCustomer === "function") {
-  router.put(
-    "/:id",
-    protect,
-    restrictTo("admin"),
-    upload.fields([{ name: "customerImage", maxCount: 1 }]),
-    upload.handleUploadErrors,
-    updateCustomer
-  );
-} else {
-  console.error("❌ updateCustomer is not a function – route skipped");
-}
-if (typeof deleteCustomer === "function") {
-  router.delete("/:id", protect, restrictTo("admin"), deleteCustomer);
-} else {
-  console.error("❌ deleteCustomer is not a function – route skipped");
-}
 
 module.exports = router;

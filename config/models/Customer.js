@@ -77,10 +77,9 @@ const CustomerSchema = new mongoose.Schema(
     // ====================
     // Personal Information (common for all visits)
     // ====================
-
     customerImage: {
-     type: String,
-     default: undefined,
+      type: String,
+      default: undefined,
     },
     name: {
       type: String,
@@ -117,6 +116,18 @@ const CustomerSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    
+    // ✅ FIX: Move these here (not in a comment)
+    additionalInfo: {
+      type: String,
+      trim: true,
+      default: undefined,
+    },
+    additionalInfoImage: {
+      type: String,
+      default: undefined,
+    },
+    
     // Reference / referral
     referredBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -126,6 +137,7 @@ const CustomerSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    
     // ====================
     // Branch & Assignment
     // ====================
@@ -139,6 +151,7 @@ const CustomerSchema = new mongoose.Schema(
       ref: "Employee",
       required: true,
     },
+    
     // ====================
     // Visits Array – all visits are stored here
     // ====================
