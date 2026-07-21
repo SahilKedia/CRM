@@ -81,7 +81,7 @@ if (typeof addCustomer === "function") {
   router.post(
     "/",
     protect,
-    restrictTo("admin"),
+    restrictTo("admin", "employee"),
     upload.fields([
       { name: "goldImages", maxCount: 100 },
       { name: "diamondImages", maxCount: 100 },
@@ -122,7 +122,7 @@ if (typeof updateCustomer === "function") {
   router.put(
     "/:id",
     protect,
-    restrictTo("admin"),
+    restrictTo("admin", "employee"),
     upload.fields([
       { name: "customerImage", maxCount: 1 },
       { name: "additionalInfoImage", maxCount: 1 } // ✅ ADDED
@@ -136,7 +136,7 @@ if (typeof updateCustomer === "function") {
 
 // ==================== DELETE CUSTOMER ====================
 if (typeof deleteCustomer === "function") {
-  router.delete("/:id", protect, restrictTo("admin"), deleteCustomer);
+  router.delete("/:id", protect, restrictTo("admin", "employee"), deleteCustomer);
 } else {
   console.error("❌ deleteCustomer is not a function – route skipped");
 }
@@ -146,7 +146,7 @@ if (typeof addVisit === "function") {
   router.post(
     "/:id/visits",
     protect,
-    restrictTo("admin"),
+    restrictTo("admin", "employee"),
     upload.fields([
       { name: "goldImages", maxCount: 100 },
       { name: "diamondImages", maxCount: 100 },
@@ -164,7 +164,7 @@ if (typeof updateVisit === "function") {
   router.put(
     "/:id/visits/:visitNumber",
     protect,
-    restrictTo("admin"),
+    restrictTo("admin", "employee"),
     upload.fields([
       { name: "goldImages", maxCount: 10 },
       { name: "diamondImages", maxCount: 10 },
@@ -192,10 +192,10 @@ if (typeof getVisitByNumber === "function") {
 
 // ==================== DELETE SPECIFIC VISIT ====================
 if (typeof deleteVisit === "function") {
-  router.delete("/:id/visits/:visitNumber", protect, restrictTo("admin"), deleteVisit);
+  router.delete("/:id/visits/:visitNumber", protect, restrictTo("admin", "employee"), deleteVisit);
 } else {
   console.error("❌ deleteVisit is not a function – using fallback handler");
-  router.delete("/:id/visits/:visitNumber", protect, restrictTo("admin"), async (req, res) => {
+  router.delete("/:id/visits/:visitNumber", protect, restrictTo("admin", "employee"), async (req, res) => {
     try {
       const { id, visitNumber } = req.params;
       const customer = await Customer.findById(id);
@@ -232,7 +232,7 @@ if (typeof fulfillRequirement === "function") {
   router.patch(
     "/:id/visits/:visitNumber/fulfill-requirement",
     protect,
-    restrictTo("admin"),
+   restrictTo("admin", "employee"),
     fulfillRequirement
   );
 } else {
@@ -364,7 +364,7 @@ router.get("/:id/visits/:visitNumber/reminder", protect, async (req, res) => {
 });
 
 // Update reminder for a specific visit
-router.put("/:id/visits/:visitNumber/reminder", protect, restrictTo("admin"), async (req, res) => {
+router.put("/:id/visits/:visitNumber/reminder", protect, restrictTo("admin", "employee"), async (req, res) => {
   try {
     const { id, visitNumber } = req.params;
     const { date, note, status } = req.body;
