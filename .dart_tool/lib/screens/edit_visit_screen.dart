@@ -413,91 +413,63 @@ class _EditVisitScreenState extends State<EditVisitScreen> {
     );
   }
 
-  // New helper to build the requirement section with badge
-  // Widget _buildRequirementSection() {
-  //   final bool isFulfilled = _requirementStatus == 'fulfilled';
-  //   return Column(
-  //     crossAxisAlignment: CrossAxisAlignment.start,
-  //     children: [
-  //       if (isFulfilled)
-  //         Container(
-  //           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-  //           margin: const EdgeInsets.only(bottom: 6),
-  //           decoration: BoxDecoration(
-  //             color: AppColors.success.withOpacity(0.15),
-  //             borderRadius: BorderRadius.circular(6),
-  //           ),
-  //           child: Row(
-  //             mainAxisSize: MainAxisSize.min,
-  //             children: const [
-  //               Icon(Icons.check_circle, color: AppColors.success, size: 16),
-  //               SizedBox(width: 4),
-  //               Text('Available', style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w600)),
-  //             ],
-  //           ),
-  //         ),
-  //       CrmTextField(
-  //         label: 'Requirement',
-  //         hint: 'Specific requirements',
-  //         prefixIcon: Icons.checklist,
-  //         controller: _requirementController,
-  //         maxLines: 2,
-  //       ),
-  //     ],
-  //   );
-  // }
-    Widget _buildRequirementSection() {
-  final bool isFulfilled = _requirementStatus == 'fulfilled';
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      TextFormField(
-        controller: _requirementController,
-        maxLines: 2,
-        decoration: InputDecoration(
-          labelText: 'Requirement',
-          hintText: 'Specific requirements',
-          prefixIcon: const Icon(Icons.checklist, color: AppColors.textSecondary),
-          suffixIcon: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: Chip(
-              label: Text(
-                isFulfilled ? 'Available' : 'Pending',
-                style: TextStyle(
-                  color: isFulfilled ? Colors.white : Colors.orange[800],
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
+  // Requirement field with status badge.
+  // NOTE: Requirement is OPTIONAL — no validator is attached here, so
+  // leaving it blank will no longer block saving (this was previously
+  // causing the false "Requirement is required" error when editing a
+  // visit, including when only an image was being changed).
+  Widget _buildRequirementSection() {
+    final bool isFulfilled = _requirementStatus == 'fulfilled';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          controller: _requirementController,
+          maxLines: 2,
+          decoration: InputDecoration(
+            labelText: 'Requirement (optional)',
+            hintText: 'Specific requirements',
+            prefixIcon: const Icon(Icons.checklist, color: AppColors.textSecondary),
+            suffixIcon: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Chip(
+                label: Text(
+                  isFulfilled ? 'Available' : 'Pending',
+                  style: TextStyle(
+                    color: isFulfilled ? Colors.white : Colors.orange[800],
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
                 ),
+                backgroundColor: isFulfilled ? AppColors.success : Colors.orange.withOpacity(0.2),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              backgroundColor: isFulfilled ? AppColors.success : Colors.orange.withOpacity(0.2),
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              visualDensity: VisualDensity.compact,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: AppColors.border),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: AppColors.border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: AppColors.primary, width: 1.4),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
           ),
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: AppColors.border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: AppColors.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: AppColors.primary, width: 1.4),
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+          style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
+          // No validator — Requirement is optional in Edit Visit, same as
+          // Add Customer / Add Visit.
         ),
-        style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
-        // Keep any validator if needed (optional)
-        validator: (v) => v?.trim().isEmpty ?? true ? 'Requirement is required' : null,
-      ),
-    ],
-  );
-}
+      ],
+    );
+  }
 
   Widget _buildImageSection(
     String type,

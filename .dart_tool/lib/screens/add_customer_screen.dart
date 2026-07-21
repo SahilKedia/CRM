@@ -1563,7 +1563,8 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
         // New customer – includes first visit
         final customerData = <String, dynamic>{
           'name': _buildFullName(),
-          'phone': _phoneController.text.trim(),
+          // 'phone': _phoneController.text.trim(),
+          'phone': '$_countryCode${_phoneController.text.trim()}',
           'address': _buildFullAddress(),
           'purposeOfVisit': _purposeOfVisitController.text.trim(),
           'numberOfVisit': _visitNumberController.text.trim(),

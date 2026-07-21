@@ -32,8 +32,7 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
 
   final List<String> _departments = [
     'Sales',
-    'Marketing',
-    'Finance',
+    'Helper',
   ];
 
   String? _selectedBranch;

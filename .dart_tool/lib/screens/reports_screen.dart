@@ -457,16 +457,35 @@ class _ReportsScreenState extends State<ReportsScreen> {
   /// Which of the six status columns (SOLD/SHORTLIST/JUST SEE/ON ORDER/
   /// REQUIREMENT/APPROVAL) a conclusion value should be written into.
   /// Column indices refer to the layout built in _exportToExcel below.
+  /// ✅ UPDATED: Gold/Diamond/Polki each now occupy 2 columns (see the
+  /// column-layout constants), so everything after them shifted right —
+  /// status columns now start at 12 instead of 9.
   int _conclusionColumnIndex(String conclusion) {
     final c = _normalizeConclusion(conclusion);
-    if (c.contains('sold')) return 9;
-    if (c.contains('shortlist')) return 10;
-    if (c.contains('just see') || c.contains('justsee')) return 11;
-    if (c.contains('order')) return 12;
-    if (c.contains('requirement') || c.contains('pending')) return 13;
-    if (c.contains('approval')) return 14;
+    if (c.contains('sold')) return 12;
+    if (c.contains('shortlist')) return 13;
+    if (c.contains('just see') || c.contains('justsee')) return 14;
+    if (c.contains('order')) return 15;
+    if (c.contains('requirement') || c.contains('pending')) return 16;
+    if (c.contains('approval')) return 17;
     return -1;
   }
+
+  /// ✅ NEW: true for any of the 6 physical columns that make up the
+  /// Gold / Diamond / Polki image pairs (6,7 / 8,9 / 10,11).
+  bool _isImageColumn(int col) =>
+      col == _colGold ||
+      col == _colGold + 1 ||
+      col == _colDiamond ||
+      col == _colDiamond + 1 ||
+      col == _colPolki ||
+      col == _colPolki + 1;
+
+  /// ✅ NEW: true for the second (right-hand) column of an image pair —
+  /// used so we can skip drawing a border between the two sub-columns
+  /// of the same category.
+  bool _isRightOfImagePair(int col) =>
+      col == _colGold + 1 || col == _colDiamond + 1 || col == _colPolki + 1;
 
   String _titleCase(String input) {
     if (input.trim().isEmpty) return '';
@@ -499,123 +518,154 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return ApiService.getImageUrl(raw);
   }
 
-  /// Downloads and embeds the first image in [imageUrls] at the given cell.
-  /// Returns true on success so the caller can report how many images
-  /// actually made it into the sheet vs silently failed.
-  Future<bool> _embedVisitImage({
+  /// How many stacked image-rows a category needs, given [colsPerCategory]
+  /// images fit side by side within one row of that category's own columns.
+  int _rowsNeededForImages(int count, {int colsPerCategory = _imageColsPerCategory}) {
+    if (count <= 0) return 1;
+    return (count / colsPerCategory).ceil();
+  }
+
+  /// ✅ FIXED: embeds ALL images from [imageUrls] as a small grid confined
+  /// to THIS customer's own row-block — [colsPerCategory] images per row,
+  /// starting at [colStart]/[startRow]. Earlier versions either only
+  /// embedded the first image, or stacked extra images at startRow + i,
+  /// which spilled into the NEXT customer's row (excel_plus's insertImage
+  /// has no per-image offset inside a single cell, so "stacking" via
+  /// row + i actually meant "leaking into other rows"). Now the caller
+  /// reserves enough real rows for this visit via _rowsNeededForImages
+  /// BEFORE moving on to the next customer, so a grid of images can live
+  /// entirely inside this customer's own block without ever touching
+  /// another customer's data.
+  Future<int> _embedImageBlock({
     required Sheet sheet,
-    required int columnIndex,
-    required int rowIndex,
+    required int colStart,
+    required int startRow,
     required List? imageUrls,
+    int colsPerCategory = _imageColsPerCategory,
+    int size = 70,
+  }) async {
+    if (imageUrls == null || imageUrls.isEmpty) return 0;
+    int embedded = 0;
+
+    for (int i = 0; i < imageUrls.length; i++) {
+      final raw = imageUrls[i]?.toString() ?? '';
+      if (raw.isEmpty) continue;
+
+      final url = _resolveImageUrl(raw);
+      final uri = Uri.tryParse(url);
+      if (uri == null || !uri.hasScheme) {
+        debugPrint('Skipping image — not a valid absolute URL: "$raw" '
+            '(resolved: "$url").');
+        continue;
+      }
+
+      try {
+        final response = await http.get(uri).timeout(const Duration(seconds: 15));
+        if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+          final int rowOffset = i ~/ colsPerCategory;
+          final int colOffset = i % colsPerCategory;
+          final int targetRow = startRow + rowOffset; // stays within THIS visit's block
+          final int targetCol = colStart + colOffset;  // stays within THIS category's columns
+
+          debugPrint('Embedding image $i at row $targetRow, col $targetCol');
+
+          sheet.insertImage(
+            response.bodyBytes,
+            anchor: CellIndex.indexByColumnRow(
+              columnIndex: targetCol,
+              rowIndex: targetRow,
+            ),
+            width: size,
+            height: size,
+          );
+          embedded++;
+        } else {
+          debugPrint('Image fetch failed for $url — HTTP ${response.statusCode}');
+        }
+      } catch (e) {
+        debugPrint('Failed to embed image from $url: $e');
+      }
+    }
+
+    return embedded;
+  }
+
+  /// Embeds a list of image URLs into a grid (default 4 per row) starting
+  /// at [startRow]/[startCol]. Used only by the Sale Report export, where
+  /// we show ALL sold images per category, not just the first one.
+  Future<Map<String, int>> _embedImageGrid({
+    required Sheet sheet,
+    required List<String> imageUrls,
+    required int startRow,
+    int startCol = 1,
+    int imagesPerRow = 4,
     int size = 85,
   }) async {
-    if (imageUrls == null || imageUrls.isEmpty) return false;
-    final raw = imageUrls.first?.toString() ?? '';
-    if (raw.isEmpty) return false;
+    int attempted = 0;
+    int embedded = 0;
 
-    final url = _resolveImageUrl(raw);
-    final uri = Uri.tryParse(url);
-    if (uri == null || !uri.hasScheme) {
-      debugPrint('Skipping image — not a valid absolute URL: "$raw" '
-          '(resolved: "$url").');
-      return false;
-    }
+    for (int i = 0; i < imageUrls.length; i++) {
+      final raw = imageUrls[i];
+      if (raw.isEmpty) continue;
+      attempted++;
 
-    try {
-      final response = await http.get(uri).timeout(const Duration(seconds: 15));
-      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
-        sheet.insertImage(
-          response.bodyBytes,
-          anchor: CellIndex.indexByColumnRow(columnIndex: columnIndex, rowIndex: rowIndex),
-          width: size,
-          height: size,
-        );
-        return true;
+      final url = _resolveImageUrl(raw);
+      final uri = Uri.tryParse(url);
+      if (uri == null || !uri.hasScheme) {
+        debugPrint('Sale report: skipping invalid image URL "$raw"');
+        continue;
       }
-      debugPrint('Image fetch failed for $url — HTTP ${response.statusCode}');
-      return false;
-    } catch (e) {
-      debugPrint('Failed to embed image from $url: $e');
-      return false;
-    }
-  }
-    
-/// Embeds a list of image URLs into a grid (default 4 per row) starting
-/// at [startRow]/[startCol]. Used only by the Sale Report export, where
-/// we show ALL sold images per category, not just the first one.
-Future<Map<String, int>> _embedImageGrid({
-  required Sheet sheet,
-  required List<String> imageUrls,
-  required int startRow,
-  int startCol = 1,
-  int imagesPerRow = 4,
-  int size = 85,
-}) async {
-  int attempted = 0;
-  int embedded = 0;
 
-  for (int i = 0; i < imageUrls.length; i++) {
-    final raw = imageUrls[i];
-    if (raw.isEmpty) continue;
-    attempted++;
+      final row = startRow + (i ~/ imagesPerRow);
+      final col = startCol + (i % imagesPerRow);
 
-    final url = _resolveImageUrl(raw);
-    final uri = Uri.tryParse(url);
-    if (uri == null || !uri.hasScheme) {
-      debugPrint('Sale report: skipping invalid image URL "$raw"');
-      continue;
-    }
-
-    final row = startRow + (i ~/ imagesPerRow);
-    final col = startCol + (i % imagesPerRow);
-
-    try {
-      final response = await http.get(uri).timeout(const Duration(seconds: 15));
-      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
-        sheet.insertImage(
-          response.bodyBytes,
-          anchor: CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row),
-          // width: size.toDouble(),
-          // height: size.toDouble(),
-          // ✅ CORRECT - use toInt() or cast to int
-          width: size.toInt(),
-          height: size.toInt(),
-        );
-        embedded++;
-      } else {
-        debugPrint('Sale report: image fetch failed for $url — HTTP ${response.statusCode}');
+      try {
+        final response = await http.get(uri).timeout(const Duration(seconds: 15));
+        if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+          sheet.insertImage(
+            response.bodyBytes,
+            anchor: CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row),
+            width: size.toInt(),
+            height: size.toInt(),
+          );
+          embedded++;
+        } else {
+          debugPrint('Sale report: image fetch failed for $url — HTTP ${response.statusCode}');
+        }
+      } catch (e) {
+        debugPrint('Sale report: failed to embed image from $url: $e');
       }
-    } catch (e) {
-      debugPrint('Sale report: failed to embed image from $url: $e');
     }
+
+    return {'attempted': attempted, 'embedded': embedded};
   }
 
-  return {'attempted': attempted, 'embedded': embedded};
-}
-
-
-
-  // --------------------- CORRECTED COLUMN LAYOUT (Reminder removed) ---------------------
+  // --------------------- CORRECTED COLUMN LAYOUT ---------------------
+  // ✅ UPDATED: Gold / Diamond / Polki each now occupy 2 physical columns
+  // (so multiple images can sit side by side instead of only 1 per
+  // category), everything after them is shifted right accordingly.
   static const int _colDate = 0;
   static const int _colSerial = 1;
   static const int _colName = 2;
   static const int _colPhone = 3;
   static const int _colAddress = 4;
   static const int _colPurpose = 5;
-  static const int _colGold = 6;
-  static const int _colDiamond = 7;
-  static const int _colPolki = 8;
-  // 9..14 are the status columns (SOLD/SHORTLIST/JUST SEE/ON ORDER/REQUIREMENT/APPROVAL)
-  static const int _colWhoAttend = 15;
-  static const int _colHelper = 16;
-  static const int _colMedia = 17;        // previously 18
-  static const int _colConclusion = 18;   // previously 19
-  static const int _totalColumns = 19;    // indices 0..18
+  static const int _colGold = 6;      // spans columns 6-7
+  static const int _colDiamond = 8;   // spans columns 8-9
+  static const int _colPolki = 10;    // spans columns 10-11
+  static const int _imageColsPerCategory = 2;
+  // 12..17 are the status columns (SOLD/SHORTLIST/JUST SEE/ON ORDER/REQUIREMENT/APPROVAL)
+  static const int _colWhoAttend = 18;
+  static const int _colHelper = 19;
+  static const int _colMedia = 20;
+  static const int _colConclusion = 21;
+  static const int _totalColumns = 22;    // indices 0..21
 
   /// Builds the workbook in the same layout as your printed register:
   /// rows grouped under a date header, Gold/Diamond/Polki as image-only
-  /// columns, the item description routed into the matching status column,
-  /// the whole row colour-coded by conclusion, and a totals footer.
+  /// column-pairs (all images per category shown in a grid), the item
+  /// description routed into the matching status column, the whole
+  /// row-block colour-coded by conclusion, and a totals footer.
   Future<void> _exportToExcel() async {
     if (_filteredCustomers.isEmpty) {
       _showSnackBar('No data to export', Colors.orange);
@@ -650,7 +700,6 @@ Future<Map<String, int>> _embedImageGrid({
       }
 
       // ---------------- Cell border (all cells in the sheet use this) ----------------
-      // Change BorderStyle to Thin / Medium / Thick / Double to taste.
       final cellBorder = xls.Border(
         borderStyle: xls.BorderStyle.Medium,
         borderColorHex: ExcelColor.fromHexString('#000000'),
@@ -670,19 +719,45 @@ Future<Map<String, int>> _embedImageGrid({
         bottomBorder: cellBorder,
       );
 
-      final headers = <String>[
-        'DATE', 'S.NO', 'CUSTOMER NAME', 'PHONE NO', 'ADDRESS',
-        'PURPOSE OF VISIT', 'GOLD', 'DIAMOND', 'POLKI',
-        'SOLD', 'SHORTLIST', 'JUST SEE', 'ON ORDER', 'REQUIREMENT', 'APPROVAL',
-        'WHO ATTEND', 'HELPER', 'MEDIA', 'CONCLUSION',
-      ];
+      // ✅ UPDATED: headers now mapped by explicit column index (since
+      // Gold/Diamond/Polki each span 2 columns, header text is written to
+      // the FIRST column of the pair and then merged across both).
+      final headerLabels = <int, String>{
+        _colDate: 'DATE',
+        _colSerial: 'S.NO',
+        _colName: 'CUSTOMER NAME',
+        _colPhone: 'PHONE NO',
+        _colAddress: 'ADDRESS',
+        _colPurpose: 'PURPOSE OF VISIT',
+        _colGold: 'GOLD',
+        _colDiamond: 'DIAMOND',
+        _colPolki: 'POLKI',
+        12: 'SOLD',
+        13: 'SHORTLIST',
+        14: 'JUST SEE',
+        15: 'ON ORDER',
+        16: 'REQUIREMENT',
+        17: 'APPROVAL',
+        _colWhoAttend: 'WHO ATTEND',
+        _colHelper: 'HELPER',
+        _colMedia: 'MEDIA',
+        _colConclusion: 'CONCLUSION',
+      };
 
-      for (int i = 0; i < headers.length; i++) {
+      headerLabels.forEach((col, label) {
         final cell = sheet.cell(
-          CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
+          CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0),
         );
-        cell.value = TextCellValue(headers[i]);
+        cell.value = TextCellValue(label);
         cell.cellStyle = headerStyle;
+      });
+
+      // GOLD / DIAMOND / POLKI headers each span their 2 image columns.
+      for (final start in [_colGold, _colDiamond, _colPolki]) {
+        sheet.merge(
+          CellIndex.indexByColumnRow(columnIndex: start, rowIndex: 0),
+          CellIndex.indexByColumnRow(columnIndex: start + _imageColsPerCategory - 1, rowIndex: 0),
+        );
       }
       sheet.setRowHeight(0, 30);
 
@@ -694,18 +769,17 @@ Future<Map<String, int>> _embedImageGrid({
         _colPhone: 15,
         _colAddress: 38,
         _colPurpose: 22,
-        _colGold: 26,
-        _colDiamond: 26,
-        _colPolki: 26,
-        9: 13,   // SOLD
-        10: 13,  // SHORTLIST
-        11: 13,  // JUST SEE
-        12: 13,  // ON ORDER
-        13: 14,  // REQUIREMENT
-        14: 13,  // APPROVAL
+        _colGold: 16, _colGold + 1: 16,
+        _colDiamond: 16, _colDiamond + 1: 16,
+        _colPolki: 16, _colPolki + 1: 16,
+        12: 13,  // SOLD
+        13: 13,  // SHORTLIST
+        14: 13,  // JUST SEE
+        15: 13,  // ON ORDER
+        16: 14,  // REQUIREMENT
+        17: 13,  // APPROVAL
         _colWhoAttend: 15,
         _colHelper: 12,
-        // Reminder column removed
         _colMedia: 12,
         _colConclusion: 15,
       };
@@ -792,102 +866,155 @@ Future<Map<String, int>> _embedImageGrid({
           final rowColor = _getConclusionExcelColor(conclusionRaw);
           if (_normalizeConclusion(conclusionRaw).contains('sold')) soldCount++;
 
-          // Colour only the Gold → Conclusion band, matching your printed
-          // report — DATE/S.NO/NAME/PHONE/ADDRESS/PURPOSE stay white.
-          // Every cell (coloured or not) gets the same visible border.
-          final coloredStyle = CellStyle(
-            verticalAlign: VerticalAlign.Center,
-            textWrapping: TextWrapping.WrapText,
-            backgroundColorHex: rowColor,
-            leftBorder: cellBorder,
-            rightBorder: cellBorder,
-            topBorder: cellBorder,
-            bottomBorder: cellBorder,
-          );
-          final plainStyle = CellStyle(
-            verticalAlign: VerticalAlign.Center,
-            textWrapping: TextWrapping.WrapText,
-            leftBorder: cellBorder,
-            rightBorder: cellBorder,
-            topBorder: cellBorder,
-            bottomBorder: cellBorder,
-          );
-          CellStyle styleForColumn(int col) =>
-              col >= _colGold ? coloredStyle : plainStyle;
+          // ---- ✅ How many image-rows does this visit need? ----
+          final goldList = visit['goldImages'] as List? ?? [];
+          final diamondList = visit['diamondImages'] as List? ?? [];
+          final polkiList = visit['polkiImages'] as List? ?? [];
 
-          for (int col = 0; col < _totalColumns; col++) {
-            sheet
-                .cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex))
-                .cellStyle = styleForColumn(col);
+          final goldRows = _rowsNeededForImages(goldList.length);
+          final diamondRows = _rowsNeededForImages(diamondList.length);
+          final polkiRows = _rowsNeededForImages(polkiList.length);
+          final rowsNeeded = [goldRows, diamondRows, polkiRows].reduce((a, b) => a > b ? a : b);
+
+          // ✅ Border logic for a clean block:
+          //  - Image columns (Gold/Diamond/Polki pairs): border only on the
+          //    OUTER edge of the whole stacked block for that category — no
+          //    line between stacked image rows, and no line between the two
+          //    sub-columns of the same category (so it reads as one box).
+          //  - Every other column: fully merged into a single cell for the
+          //    whole block, so it only ever has ONE outer border, same as
+          //    Name/Phone/Address already look.
+       CellStyle blockStyle({
+  ExcelColor? bg,
+  required bool top,
+ required bool bottom,
+ required bool left,
+ required bool right,
+}) {
+  return CellStyle(
+    verticalAlign: VerticalAlign.Center,
+    textWrapping: TextWrapping.WrapText,
+    backgroundColorHex: bg ?? ExcelColor.fromHexString('#FFFFFF'),
+    leftBorder: left ? cellBorder : null,
+    rightBorder: right ? cellBorder : null,
+    topBorder: top ? cellBorder : null,
+    bottomBorder: bottom ? cellBorder : null,
+  );
+}
+
+          // r = physical row offset within this visit's block (0-based)
+          CellStyle styleFor(int col, int r) {
+            final bg = col >= _colGold ? rowColor : null;
+
+            if (_isImageColumn(col)) {
+              return blockStyle(
+                bg: bg,
+                top: r == 0,
+                bottom: r == rowsNeeded - 1,
+                left: !_isRightOfImagePair(col),
+                right: _isRightOfImagePair(col),
+              );
+            }
+
+            // Non-image columns are merged into one cell for the block —
+            // a single clean outer border is enough.
+            return blockStyle(bg: bg, top: true, bottom: true, left: true, right: true);
           }
 
-          void setCell(int col, String value) {
-            final cell = sheet.cell(
-              CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex),
-            );
-            cell.value = TextCellValue(value);
-            // Reapply style after setting value — some excel_plus versions
-            // reset the cell's style when .value is assigned afterwards,
-            // which was causing the text-overflow you saw.
-            cell.cellStyle = styleForColumn(col);
-          }
-
-          setCell(_colSerial, serial.toString());
-          setCell(_colName, customer['name']?.toString() ?? '');
-          setCell(_colPhone, customer['phone']?.toString() ?? '');
-          setCell(_colAddress, customer['address']?.toString() ?? '');
-          setCell(_colPurpose, visit['purposeOfVisit']?.toString() ?? '');
-          // Gold/Diamond/Polki columns are image-only, no text.
-          if (statusCol != -1) {
-            setCell(statusCol, visit['purposeOfVisit']?.toString() ?? '');
-          }
-          setCell(_colWhoAttend, _resolveEmployeeName(visit['whoAttend']));
-          setCell(_colHelper, visit['helper']?.toString() ?? '');
-          // Reminder column removed – no call to setCell for it.
-          // _colMedia intentionally left blank — no `media` field in your data yet.
-          setCell(_colConclusion, _titleCase(conclusionRaw));
-
-          // ---- Dynamic row height so wrapped text and larger images fit ----
+          // ---- Row height for the whole block ----
           final address = customer['address']?.toString() ?? '';
           final purpose = visit['purposeOfVisit']?.toString() ?? '';
           final longest = address.length > purpose.length ? address : purpose;
           final estimatedLines = (longest.length / 32).ceil().clamp(1, 8);
           final textHeight = (estimatedLines * 15).toDouble();
-          // Images are 85px (~64pt) tall — make sure the row is tall enough.
-          final rowHeight = textHeight < 70 ? 70.0 : textHeight;
-          sheet.setRowHeight(rowIndex, rowHeight.clamp(20, 160));
 
-          // ---- Embed Gold / Diamond / Polki images (first image each) ----
-          imagesAttempted += (visit['goldImages'] as List? ?? []).isNotEmpty ? 1 : 0;
-          imagesAttempted += (visit['diamondImages'] as List? ?? []).isNotEmpty ? 1 : 0;
-          imagesAttempted += (visit['polkiImages'] as List? ?? []).isNotEmpty ? 1 : 0;
+          const double imageRowHeight = 78.0; // ~70px image + padding
+          final totalImageHeight = rowsNeeded * imageRowHeight;
+          final perRowHeight =
+              (totalImageHeight > textHeight ? totalImageHeight : textHeight) / rowsNeeded;
 
-          if (await _embedVisitImage(
-            sheet: sheet,
-            columnIndex: _colGold,
-            rowIndex: rowIndex,
-            imageUrls: visit['goldImages'] as List?,
-          )) {
-            imagesEmbedded++;
-          }
-          if (await _embedVisitImage(
-            sheet: sheet,
-            columnIndex: _colDiamond,
-            rowIndex: rowIndex,
-            imageUrls: visit['diamondImages'] as List?,
-          )) {
-            imagesEmbedded++;
-          }
-          if (await _embedVisitImage(
-            sheet: sheet,
-            columnIndex: _colPolki,
-            rowIndex: rowIndex,
-            imageUrls: visit['polkiImages'] as List?,
-          )) {
-            imagesEmbedded++;
+          for (int r = 0; r < rowsNeeded; r++) {
+            sheet.setRowHeight(rowIndex + r, perRowHeight.clamp(20, 200));
           }
 
-          rowIndex++;
+          debugPrint('Row $rowIndex uses $rowsNeeded row(s) '
+              '(gold: ${goldList.length}, diamond: ${diamondList.length}, polki: ${polkiList.length})');
+
+          // ---- ✅ Style ONLY the image columns per physical row — these
+          //         can't be merged because insertImage needs a real,
+          //         individual cell to anchor each image to. ----
+          for (int r = 0; r < rowsNeeded; r++) {
+            for (int col = 0; col < _totalColumns; col++) {
+              if (_isImageColumn(col)) {
+                sheet
+                    .cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex + r))
+                    .cellStyle = styleFor(col, r);
+              }
+            }
+          }
+
+          // ---- ✅ Every non-image column: merged into ONE cell across the
+          //         whole block (even when empty), so it can never show an
+          //         internal grid line. ----
+          void mergeColumn(int col, String value) {
+            final cell = sheet.cell(
+              CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex),
+            );
+            if (value.isNotEmpty) {
+              cell.value = TextCellValue(value);
+            }
+            // Reapply style after setting value — some excel_plus versions
+            // reset the cell's style when .value is assigned afterwards.
+            cell.cellStyle = styleFor(col, 0);
+            if (rowsNeeded > 1) {
+              sheet.merge(
+                CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex),
+                CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex + rowsNeeded - 1),
+              );
+            }
+          }
+
+          final columnValues = <int, String>{
+            _colSerial: serial.toString(),
+            _colName: customer['name']?.toString() ?? '',
+            _colPhone: customer['phone']?.toString() ?? '',
+            _colAddress: customer['address']?.toString() ?? '',
+            _colPurpose: visit['purposeOfVisit']?.toString() ?? '',
+            _colWhoAttend: _resolveEmployeeName(visit['whoAttend']),
+            _colHelper: visit['helper']?.toString() ?? '',
+            _colConclusion: _titleCase(conclusionRaw),
+            if (statusCol != -1) statusCol: visit['purposeOfVisit']?.toString() ?? '',
+          };
+
+          for (int col = 0; col < _totalColumns; col++) {
+            if (_isImageColumn(col)) continue;
+            mergeColumn(col, columnValues[col] ?? '');
+          }
+
+          // ---- ✅ Embed ALL Gold / Diamond / Polki images, as a grid,
+          //         entirely within this visit's own row-block ----
+          imagesAttempted += goldList.length + diamondList.length + polkiList.length;
+
+          imagesEmbedded += await _embedImageBlock(
+            sheet: sheet,
+            colStart: _colGold,
+            startRow: rowIndex,
+            imageUrls: goldList,
+          );
+          imagesEmbedded += await _embedImageBlock(
+            sheet: sheet,
+            colStart: _colDiamond,
+            startRow: rowIndex,
+            imageUrls: diamondList,
+          );
+          imagesEmbedded += await _embedImageBlock(
+            sheet: sheet,
+            colStart: _colPolki,
+            startRow: rowIndex,
+            imageUrls: polkiList,
+          );
+
+          rowIndex += rowsNeeded; // ✅ advance past the WHOLE block — next customer starts clean
           serial++;
           totalVisitsExported++;
         }
@@ -972,280 +1099,279 @@ Future<Map<String, int>> _embedImageGrid({
   
 
   // ------------------------------------------------------------------
-// Export SALE ONLY report (grid layout: GOLD/DIAMOND/POLKI rows,
-// images in columns, grouped by date) — matches the printed
-// "SOLD ITEMS : dd-mm-yyyy" register format.
-// ------------------------------------------------------------------
-static const int _saleImagesPerRow = 4;
+  // Export SALE ONLY report (grid layout: GOLD/DIAMOND/POLKI rows,
+  // images in columns, grouped by date) — matches the printed
+  // "SOLD ITEMS : dd-mm-yyyy" register format.
+  // ------------------------------------------------------------------
+  static const int _saleImagesPerRow = 4;
 
-Future<void> _exportSaleReport() async {
-  setState(() {
-    _isExportingSale = true;
-    _saleExportStatus = 'Preparing sale report...';
-  });
+  Future<void> _exportSaleReport() async {
+    setState(() {
+      _isExportingSale = true;
+      _saleExportStatus = 'Preparing sale report...';
+    });
 
-  try {
-    final hasPermission = await _requestStoragePermission();
-    if (!hasPermission) {
-      setState(() => _isExportingSale = false);
-      _showSnackBar('Storage permission is required to export', Colors.red);
-      return;
-    }
-
-    // Group only SOLD visits (within the currently selected date range)
-    // by date, collecting gold/diamond/polki image URLs separately.
-    final Map<String, Map<String, List<String>>> soldByDate = {};
-
-    for (final customer in _allCustomers) {
-      final visits = customer['visits'] as List? ?? [];
-      for (final visit in visits) {
-        final conclusion = visit['conclusion']?.toString() ?? '';
-        if (!_normalizeConclusion(conclusion).contains('sold')) continue;
-
-        final d = visit['visitDate'];
-        if (d == null || _dateRange == null) continue;
-        DateTime date;
-        try {
-          date = DateTime.parse(d.toString());
-        } catch (_) {
-          continue;
-        }
-        final inRange = date.isAfter(
-                _dateRange!.start.subtract(const Duration(seconds: 1))) &&
-            date.isBefore(_dateRange!.end.add(const Duration(seconds: 1)));
-        if (!inRange) continue;
-
-        final dateKey = DateFormat('yyyy-MM-dd').format(date);
-        final bucket = soldByDate.putIfAbsent(
-          dateKey,
-          () => {'gold': <String>[], 'diamond': <String>[], 'polki': <String>[]},
-        );
-        bucket['gold']!.addAll(
-            ((visit['goldImages'] as List?) ?? []).map((e) => e.toString()));
-        bucket['diamond']!.addAll(
-            ((visit['diamondImages'] as List?) ?? []).map((e) => e.toString()));
-        bucket['polki']!.addAll(
-            ((visit['polkiImages'] as List?) ?? []).map((e) => e.toString()));
+    try {
+      final hasPermission = await _requestStoragePermission();
+      if (!hasPermission) {
+        setState(() => _isExportingSale = false);
+        _showSnackBar('Storage permission is required to export', Colors.red);
+        return;
       }
-    }
 
-    if (soldByDate.isEmpty) {
-      setState(() => _isExportingSale = false);
-      _showSnackBar('No sold items found in the selected period', Colors.orange);
-      return;
-    }
+      // Group only SOLD visits (within the currently selected date range)
+      // by date, collecting gold/diamond/polki image URLs separately.
+      final Map<String, Map<String, List<String>>> soldByDate = {};
 
-    final folder = await _selectFolder();
-    if (folder == null) {
-      setState(() => _isExportingSale = false);
-      return;
-    }
+      for (final customer in _allCustomers) {
+        final visits = customer['visits'] as List? ?? [];
+        for (final visit in visits) {
+          final conclusion = visit['conclusion']?.toString() ?? '';
+          if (!_normalizeConclusion(conclusion).contains('sold')) continue;
 
-    final excel = Excel.createExcel();
-    const sheetName = 'Sale Report';
-    final Sheet sheet = excel[sheetName];
-    excel.setDefaultSheet(sheetName);
-    if (excel.sheets.containsKey('Sheet1') && sheetName != 'Sheet1') {
-      excel.delete('Sheet1');
-    }
-
-    final cellBorder = xls.Border(
-      borderStyle: xls.BorderStyle.Medium,
-      borderColorHex: ExcelColor.fromHexString('#000000'),
-    );
-
-    sheet.setColumnWidth(0, 14);
-    for (int c = 1; c <= _saleImagesPerRow; c++) {
-      sheet.setColumnWidth(c, 16);
-    }
-
-    final dateHeaderStyle = CellStyle(
-      bold: true,
-      fontColorHex: ExcelColor.fromHexString('#FF0000'),
-      // underline: Underline.Single,
-      backgroundColorHex: ExcelColor.fromHexString('#BDD7EE'),
-      horizontalAlign: HorizontalAlign.Center,
-      verticalAlign: VerticalAlign.Center,
-      leftBorder: cellBorder,
-      rightBorder: cellBorder,
-      topBorder: cellBorder,
-      bottomBorder: cellBorder,
-    );
-
-    final categoryLabelStyle = CellStyle(
-      bold: true,
-      backgroundColorHex: ExcelColor.fromHexString('#FFFF00'),
-      horizontalAlign: HorizontalAlign.Center,
-      verticalAlign: VerticalAlign.Center,
-      leftBorder: cellBorder,
-      rightBorder: cellBorder,
-      topBorder: cellBorder,
-      bottomBorder: cellBorder,
-    );
-
-    final imageCellStyle = CellStyle(
-      leftBorder: cellBorder,
-      rightBorder: cellBorder,
-      topBorder: cellBorder,
-      bottomBorder: cellBorder,
-    );
-
-    const categoryOrder = ['gold', 'diamond', 'polki'];
-    const categoryLabels = {'gold': 'GOLD', 'diamond': 'DIAMOND', 'polki': 'POLKI'};
-    const imageRowHeight = 95.0;
-
-    final sortedDateKeys = soldByDate.keys.toList()..sort();
-    int rowIndex = 0;
-    int totalImagesAttempted = 0;
-    int totalImagesEmbedded = 0;
-    int totalSoldItems = 0;
-
-    for (final dateKey in sortedDateKeys) {
-      final bucket = soldByDate[dateKey]!;
-      final nonEmptyCategories =
-          categoryOrder.where((k) => bucket[k]!.isNotEmpty).toList();
-      if (nonEmptyCategories.isEmpty) continue;
-
-      // ---- Date header row: "SOLD ITEMS : dd-mm-yyyy" ----
-      sheet.merge(
-        CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex),
-        CellIndex.indexByColumnRow(columnIndex: _saleImagesPerRow, rowIndex: rowIndex),
-      );
-      final headerCell =
-          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex));
-      headerCell.value =
-          TextCellValue('SOLD ITEMS : ${_formatDate(DateTime.parse(dateKey))}');
-      headerCell.cellStyle = dateHeaderStyle;
-      sheet.setRowHeight(rowIndex, 26);
-      rowIndex++;
-
-      // ---- One block per category (GOLD / DIAMOND / POLKI) ----
-      for (final catKey in nonEmptyCategories) {
-        final urls = bucket[catKey]!;
-        totalSoldItems += urls.length;
-        final rowsNeeded = (urls.length / _saleImagesPerRow).ceil().clamp(1, 1000);
-
-        for (int r = 0; r < rowsNeeded; r++) {
-          for (int c = 0; c <= _saleImagesPerRow; c++) {
-            sheet
-                .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: rowIndex + r))
-                .cellStyle = c == 0 ? categoryLabelStyle : imageCellStyle;
+          final d = visit['visitDate'];
+          if (d == null || _dateRange == null) continue;
+          DateTime date;
+          try {
+            date = DateTime.parse(d.toString());
+          } catch (_) {
+            continue;
           }
-          sheet.setRowHeight(rowIndex + r, imageRowHeight);
-        }
+          final inRange = date.isAfter(
+                  _dateRange!.start.subtract(const Duration(seconds: 1))) &&
+              date.isBefore(_dateRange!.end.add(const Duration(seconds: 1)));
+          if (!inRange) continue;
 
-        if (rowsNeeded > 1) {
-          sheet.merge(
-            CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex),
-            CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex + rowsNeeded - 1),
+          final dateKey = DateFormat('yyyy-MM-dd').format(date);
+          final bucket = soldByDate.putIfAbsent(
+            dateKey,
+            () => {'gold': <String>[], 'diamond': <String>[], 'polki': <String>[]},
           );
+          bucket['gold']!.addAll(
+              ((visit['goldImages'] as List?) ?? []).map((e) => e.toString()));
+          bucket['diamond']!.addAll(
+              ((visit['diamondImages'] as List?) ?? []).map((e) => e.toString()));
+          bucket['polki']!.addAll(
+              ((visit['polkiImages'] as List?) ?? []).map((e) => e.toString()));
         }
-        final labelCell =
-            sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex));
-        labelCell.value = TextCellValue(categoryLabels[catKey]!);
-        labelCell.cellStyle = categoryLabelStyle;
-
-        setState(() {
-          _saleExportStatus =
-              'Embedding ${categoryLabels[catKey]} images (${urls.length})...';
-        });
-
-        final result = await _embedImageGrid(
-          sheet: sheet,
-          imageUrls: urls,
-          startRow: rowIndex,
-          startCol: 1,
-          imagesPerRow: _saleImagesPerRow,
-          size: 85,
-        );
-        totalImagesAttempted += result['attempted']!;
-        totalImagesEmbedded += result['embedded']!;
-
-        rowIndex += rowsNeeded;
       }
 
-      rowIndex++; // spacer row between dates
+      if (soldByDate.isEmpty) {
+        setState(() => _isExportingSale = false);
+        _showSnackBar('No sold items found in the selected period', Colors.orange);
+        return;
+      }
+
+      final folder = await _selectFolder();
+      if (folder == null) {
+        setState(() => _isExportingSale = false);
+        return;
+      }
+
+      final excel = Excel.createExcel();
+      const sheetName = 'Sale Report';
+      final Sheet sheet = excel[sheetName];
+      excel.setDefaultSheet(sheetName);
+      if (excel.sheets.containsKey('Sheet1') && sheetName != 'Sheet1') {
+        excel.delete('Sheet1');
+      }
+
+      final cellBorder = xls.Border(
+        borderStyle: xls.BorderStyle.Medium,
+        borderColorHex: ExcelColor.fromHexString('#000000'),
+      );
+
+      sheet.setColumnWidth(0, 14);
+      for (int c = 1; c <= _saleImagesPerRow; c++) {
+        sheet.setColumnWidth(c, 16);
+      }
+
+      final dateHeaderStyle = CellStyle(
+        bold: true,
+        fontColorHex: ExcelColor.fromHexString('#FF0000'),
+        backgroundColorHex: ExcelColor.fromHexString('#BDD7EE'),
+        horizontalAlign: HorizontalAlign.Center,
+        verticalAlign: VerticalAlign.Center,
+        leftBorder: cellBorder,
+        rightBorder: cellBorder,
+        topBorder: cellBorder,
+        bottomBorder: cellBorder,
+      );
+
+      final categoryLabelStyle = CellStyle(
+        bold: true,
+        backgroundColorHex: ExcelColor.fromHexString('#FFFF00'),
+        horizontalAlign: HorizontalAlign.Center,
+        verticalAlign: VerticalAlign.Center,
+        leftBorder: cellBorder,
+        rightBorder: cellBorder,
+        topBorder: cellBorder,
+        bottomBorder: cellBorder,
+      );
+
+      final imageCellStyle = CellStyle(
+        leftBorder: cellBorder,
+        rightBorder: cellBorder,
+        topBorder: cellBorder,
+        bottomBorder: cellBorder,
+      );
+
+      const categoryOrder = ['gold', 'diamond', 'polki'];
+      const categoryLabels = {'gold': 'GOLD', 'diamond': 'DIAMOND', 'polki': 'POLKI'};
+      const imageRowHeight = 95.0;
+
+      final sortedDateKeys = soldByDate.keys.toList()..sort();
+      int rowIndex = 0;
+      int totalImagesAttempted = 0;
+      int totalImagesEmbedded = 0;
+      int totalSoldItems = 0;
+
+      for (final dateKey in sortedDateKeys) {
+        final bucket = soldByDate[dateKey]!;
+        final nonEmptyCategories =
+            categoryOrder.where((k) => bucket[k]!.isNotEmpty).toList();
+        if (nonEmptyCategories.isEmpty) continue;
+
+        // ---- Date header row: "SOLD ITEMS : dd-mm-yyyy" ----
+        sheet.merge(
+          CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex),
+          CellIndex.indexByColumnRow(columnIndex: _saleImagesPerRow, rowIndex: rowIndex),
+        );
+        final headerCell =
+            sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex));
+        headerCell.value =
+            TextCellValue('SOLD ITEMS : ${_formatDate(DateTime.parse(dateKey))}');
+        headerCell.cellStyle = dateHeaderStyle;
+        sheet.setRowHeight(rowIndex, 26);
+        rowIndex++;
+
+        // ---- One block per category (GOLD / DIAMOND / POLKI) ----
+        for (final catKey in nonEmptyCategories) {
+          final urls = bucket[catKey]!;
+          totalSoldItems += urls.length;
+          final rowsNeeded = (urls.length / _saleImagesPerRow).ceil().clamp(1, 1000);
+
+          for (int r = 0; r < rowsNeeded; r++) {
+            for (int c = 0; c <= _saleImagesPerRow; c++) {
+              sheet
+                  .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: rowIndex + r))
+                  .cellStyle = c == 0 ? categoryLabelStyle : imageCellStyle;
+            }
+            sheet.setRowHeight(rowIndex + r, imageRowHeight);
+          }
+
+          if (rowsNeeded > 1) {
+            sheet.merge(
+              CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex),
+              CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex + rowsNeeded - 1),
+            );
+          }
+          final labelCell =
+              sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex));
+          labelCell.value = TextCellValue(categoryLabels[catKey]!);
+          labelCell.cellStyle = categoryLabelStyle;
+
+          setState(() {
+            _saleExportStatus =
+                'Embedding ${categoryLabels[catKey]} images (${urls.length})...';
+          });
+
+          final result = await _embedImageGrid(
+            sheet: sheet,
+            imageUrls: urls,
+            startRow: rowIndex,
+            startCol: 1,
+            imagesPerRow: _saleImagesPerRow,
+            size: 85,
+          );
+          totalImagesAttempted += result['attempted']!;
+          totalImagesEmbedded += result['embedded']!;
+
+          rowIndex += rowsNeeded;
+        }
+
+        rowIndex++; // spacer row between dates
+      }
+
+      setState(() => _saleExportStatus = 'Saving file...');
+
+      final fileBytes = excel.save();
+      if (fileBytes == null) throw Exception('Failed to generate excel bytes');
+
+      final fileName =
+          'Sale_Report_${DateFormat('ddMMyyyy_HHmmss').format(DateTime.now())}.xlsx';
+      final filePath = '$folder/$fileName';
+      final file = File(filePath);
+      await file.writeAsBytes(fileBytes);
+
+      setState(() {
+        _isExportingSale = false;
+        _saleExportStatus = '';
+      });
+
+      _showSaleExportSuccessDialog(
+        filePath,
+        totalSoldItems,
+        totalImagesAttempted,
+        totalImagesEmbedded,
+      );
+    } catch (e) {
+      debugPrint('Sale report export error: $e');
+      setState(() {
+        _isExportingSale = false;
+        _saleExportStatus = '';
+      });
+      _showSnackBar('Sale report export failed: $e', Colors.red);
     }
-
-    setState(() => _saleExportStatus = 'Saving file...');
-
-    final fileBytes = excel.save();
-    if (fileBytes == null) throw Exception('Failed to generate excel bytes');
-
-    final fileName =
-        'Sale_Report_${DateFormat('ddMMyyyy_HHmmss').format(DateTime.now())}.xlsx';
-    final filePath = '$folder/$fileName';
-    final file = File(filePath);
-    await file.writeAsBytes(fileBytes);
-
-    setState(() {
-      _isExportingSale = false;
-      _saleExportStatus = '';
-    });
-
-    _showSaleExportSuccessDialog(
-      filePath,
-      totalSoldItems,
-      totalImagesAttempted,
-      totalImagesEmbedded,
-    );
-  } catch (e) {
-    debugPrint('Sale report export error: $e');
-    setState(() {
-      _isExportingSale = false;
-      _saleExportStatus = '';
-    });
-    _showSnackBar('Sale report export failed: $e', Colors.red);
   }
-}
 
-void _showSaleExportSuccessDialog(
-  String filePath,
-  int totalSoldItems,
-  int imagesAttempted,
-  int imagesEmbedded,
-) {
-  if (!mounted) return;
-  final imagesFailed = imagesAttempted - imagesEmbedded;
-  showDialog(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Row(
-        children: [
-          Icon(Icons.check_circle, color: Colors.green),
-          SizedBox(width: 8),
-          Text('Sale Report Exported'),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('$totalSoldItems sold item(s) included.'),
-          if (imagesAttempted > 0) ...[
-            const SizedBox(height: 4),
-            Text(
-              imagesFailed == 0
-                  ? '$imagesEmbedded/$imagesAttempted images embedded.'
-                  : '$imagesEmbedded/$imagesAttempted images embedded — '
-                      '$imagesFailed failed to load.',
-              style: TextStyle(
-                fontSize: 12,
-                color: imagesFailed == 0 ? Colors.green[700] : Colors.orange[800],
-              ),
-            ),
+  void _showSaleExportSuccessDialog(
+    String filePath,
+    int totalSoldItems,
+    int imagesAttempted,
+    int imagesEmbedded,
+  ) {
+    if (!mounted) return;
+    final imagesFailed = imagesAttempted - imagesEmbedded;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green),
+            SizedBox(width: 8),
+            Text('Sale Report Exported'),
           ],
-          const SizedBox(height: 8),
-          Text('Saved to:\n$filePath', style: const TextStyle(fontSize: 12)),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$totalSoldItems sold item(s) included.'),
+            if (imagesAttempted > 0) ...[
+              const SizedBox(height: 4),
+              Text(
+                imagesFailed == 0
+                    ? '$imagesEmbedded/$imagesAttempted images embedded.'
+                    : '$imagesEmbedded/$imagesAttempted images embedded — '
+                        '$imagesFailed failed to load.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: imagesFailed == 0 ? Colors.green[700] : Colors.orange[800],
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Text('Saved to:\n$filePath', style: const TextStyle(fontSize: 12)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
         ],
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
-      ],
-    ),
-  );
-}
+    );
+  }
 
   void _showExportSuccessDialog(
     String filePath,
@@ -1386,109 +1512,215 @@ void _showSaleExportSuccessDialog(
   // ------------------------------------------------------------------
   // AppBar
   // ------------------------------------------------------------------
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      backgroundColor: AppColors.primary,
-      foregroundColor: Colors.white,
-      title: _isSearching
-          ? Container(
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: TextField(
-                controller: _searchController,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Search by name, phone, email...',
-                  hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
-                  prefixIcon: Icon(Icons.search_rounded, color: Colors.grey.shade500, size: 20),
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+PreferredSizeWidget _buildAppBar() {
+  return AppBar(
+    elevation: 0,
+    scrolledUnderElevation: 0,
+    backgroundColor: AppColors.primary,
+    foregroundColor: Colors.white,
+    titleSpacing: 8,
+    title: _isSearching
+        ? SizedBox(
+            height: 42,
+            child: TextField(
+              controller: _searchController,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Search by name, phone, email...',
+                hintStyle: TextStyle(
+                  color: Colors.grey.shade500,
+                  fontSize: 14,
                 ),
-                style: const TextStyle(color: Colors.black87, fontSize: 14.5),
-                onChanged: (_) => _applyFilters(),
+                filled: true,
+                fillColor: Colors.white,
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  color: Colors.grey.shade500,
+                  size: 20,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(vertical: 10),
               ),
-            )
-          : Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.16),
-                    borderRadius: BorderRadius.circular(10),
+              style: const TextStyle(
+                color: Colors.black87,
+                fontSize: 14.5,
+              ),
+              onChanged: (_) => _applyFilters(),
+            ),
+          )
+        : const Text(
+            'Customer Reports',
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 18,
+            ),
+          ),
+    actions: [
+      if (_isSearching)
+        IconButton(
+          tooltip: 'Close search',
+          icon: const Icon(Icons.close_rounded),
+          onPressed: () {
+            _searchController.clear();
+            setState(() => _isSearching = false);
+            _applyFilters();
+            FocusScope.of(context).unfocus();
+          },
+        )
+      else ...[
+        IconButton(
+          tooltip: 'Search',
+          icon: const Icon(Icons.search_rounded),
+          onPressed: () {
+            setState(() => _isSearching = true);
+          },
+        ),
+
+       PopupMenuButton<String>(
+  tooltip: "More",
+  elevation: 8,
+  color: Colors.white,
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(18),
+  ),
+  offset: const Offset(0, 50),
+  icon: Container(
+    padding: const EdgeInsets.all(8),
+    decoration: BoxDecoration(
+      color: Colors.white.withOpacity(0.15),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: const Icon(
+      Icons.more_vert_rounded,
+      color: Colors.white,
+      size: 20,
+    ),
+  ),
+  onSelected: (value) {
+    switch (value) {
+      case "excel":
+        if (!_isExporting) _exportToExcel();
+        break;
+
+      case "sale":
+        if (!_isExportingSale) _exportSaleReport();
+        break;
+    }
+  },
+  itemBuilder: (context) => [
+
+    PopupMenuItem<String>(
+      value: "excel",
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: _isExporting
+                ? const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    Icons.table_chart_rounded,
+                    color: Colors.green.shade700,
                   ),
-                  child: const Icon(Icons.analytics_rounded, size: 18, color: Colors.white),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "Excel Report",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
                 ),
-                const SizedBox(width: 10),
-                const Text(
-                  'Customer Reports',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+                SizedBox(height: 2),
+                Text(
+                  "Export customer data",
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
-      actions: [
-        if (!_isSearching)
-          _appBarIconButton(
-            icon: Icons.file_download_rounded,
-            isLoading: _isExporting,
-            tooltip: 'Export to Excel',
-            onPressed: _isExporting ? null : _exportToExcel,
           ),
-        if (!_isSearching)
-          _appBarIconButton(
-            icon: Icons.photo_library_rounded,
-            isLoading: _isExportingSale,
-            tooltip: 'Export Sale Report (images only)',
-            onPressed: _isExportingSale ? null : _exportSaleReport,
-          ),
-        if (!_isSearching)
-          _appBarIconButton(
-            icon: Icons.search_rounded,
-            tooltip: 'Search',
-            onPressed: () => setState(() => _isSearching = true),
-          ),
-        if (_isSearching)
-          _appBarIconButton(
-            icon: Icons.close_rounded,
-            tooltip: 'Close search',
-            onPressed: () {
-              _searchController.clear();
-              setState(() => _isSearching = false);
-              _applyFilters();
-              FocusScope.of(context).unfocus();
-            },
-          ),
-        const SizedBox(width: 6),
-      ],
-    );
-  }
-
-  Widget _appBarIconButton({
-    required IconData icon,
-    required VoidCallback? onPressed,
-    String? tooltip,
-    bool isLoading = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
-      child: IconButton(
-        tooltip: tooltip,
-        onPressed: onPressed,
-        icon: isLoading
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.2),
-              )
-            : Icon(icon, size: 21),
+        ],
       ),
-    );
-  }
+    ),
+
+    const PopupMenuDivider(),
+
+    PopupMenuItem<String>(
+      value: "sale",
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: _isExportingSale
+                ? const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    Icons.photo_library_rounded,
+                    color: Colors.orange.shade700,
+                  ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "Sale Report",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  "Export images only",
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  ],
+),
+
+        const SizedBox(width: 4),
+      ],
+    ],
+  );
+}
 
   Widget _buildProgressBanner(String status, Color color) {
     return Container(

@@ -1203,53 +1203,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 26),
 
             // ---- QUICK ACTIONS ----
-            _sectionHeader('Quick Actions'),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 104,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                children: [
-                  _buildQuickActionCard(
-                    'Add\nEmployee',
-                    Icons.person_add_alt_1_rounded,
-                    const Color(0xFF4CAF50),
-                    _navigateToAddEmployee,
-                  ),
-                  const SizedBox(width: 12),
-                  _buildQuickActionCard(
-                    'Add\nCustomer',
-                    Icons.person_add_rounded,
-                    const Color(0xFF2196F3),
-                    _navigateToAddCustomer,
-                  ),
-                  const SizedBox(width: 12),
-                  _buildQuickActionCard(
-                    'View\nReports',
-                    Icons.analytics_rounded,
-                    const Color(0xFF9C27B0),
-                    () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ReportsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(width: 12),
-                  _buildQuickActionCard(
-                    'Add\nBranch',
-                    Icons.add_business_rounded,
-                    const Color(0xFF607D8B),
-                    _navigateToAddBranch,
-                  ),
-                ],
-              ),
-            ),
+           _sectionHeader('Quick Actions'),
+const SizedBox(height: 12),
 
-            const SizedBox(height: 26),
+SizedBox(
+  height: 130, // Increased from 104
+  child: ListView(
+    scrollDirection: Axis.horizontal,
+    physics: const BouncingScrollPhysics(),
+    children: [
+      _buildQuickActionCard(
+        'Add\nEmployee',
+        Icons.person_add_alt_1_rounded,
+        const Color(0xFF4CAF50),
+        _navigateToAddEmployee,
+      ),
+      const SizedBox(width: 12),
+      _buildQuickActionCard(
+        'Add\nCustomer',
+        Icons.person_add_rounded,
+        const Color(0xFF2196F3),
+        _navigateToAddCustomer,
+      ),
+      const SizedBox(width: 12),
+      _buildQuickActionCard(
+        'View\nReports',
+        Icons.analytics_rounded,
+        const Color(0xFF9C27B0),
+        () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const ReportsScreen(),
+            ),
+          );
+        },
+      ),
+      const SizedBox(width: 12),
+      _buildQuickActionCard(
+        'Add\nBranch',
+        Icons.add_business_rounded,
+        const Color(0xFF607D8B),
+        _navigateToAddBranch,
+      ),
+    ],
+  ),
+),
+const SizedBox(height: 26),
 
             // ---- RECENT CUSTOMERS ----
             _sectionHeader(
