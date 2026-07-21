@@ -13,20 +13,44 @@ exports.protect = async (req, res, next) => {
     }
 
     const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    if (decoded.role === "admin" || decoded.role === "superadmin") {
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (jwtErr) {
+      // Distinguish expired vs invalid so the client can react correctly
+      if (jwtErr.name === "TokenExpiredError") {
+        return res.status(401).json({
+          success: false,
+          message: "Session expired. Please login again.",
+        });
+      }
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token. Please login again.",
+      });
+    }
+
+    // Normalize role from token to avoid case-sensitivity issues (" Admin", "ADMIN", etc.)
+    const tokenRole = (decoded.role || "").toString().trim().toLowerCase();
+
+    if (tokenRole === "admin" || tokenRole === "superadmin") {
       const user = await User.findById(decoded.id).select("-password");
       if (!user) {
         return res.status(401).json({ success: false, message: "User not found" });
       }
+
+      // Trust the DB's current role, not the (possibly stale) token role,
+      // but normalize it the same way so comparisons never break on casing.
+      const dbRole = (user.role || "").toString().trim().toLowerCase();
+
       req.user = {
         id: user._id,
-        role: user.role,
+        role: dbRole || tokenRole, // fallback to token role if DB role missing
         branch: user.branch || null,
         name: user.name,
       };
-    } else if (decoded.role === "employee") {
+    } else if (tokenRole === "employee") {
       const employee = await Employee.findById(decoded.id);
       if (!employee) {
         return res.status(401).json({ success: false, message: "Employee not found" });
@@ -52,13 +76,31 @@ exports.protect = async (req, res, next) => {
 };
 
 exports.restrictTo = (...roles) => {
+  // Normalize the allowed roles once, up front
+  const allowed = roles.map((r) => r.toString().trim().toLowerCase());
+
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!req.user || !req.user.role) {
       return res.status(403).json({
         success: false,
         message: "You do not have permission to perform this action",
       });
     }
+
+    const userRole = req.user.role.toString().trim().toLowerCase();
+
+    // superadmin automatically satisfies any check that allows "admin"
+    const hasAccess =
+      allowed.includes(userRole) ||
+      (userRole === "superadmin" && allowed.includes("admin"));
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to perform this action",
+      });
+    }
+
     next();
   };
 };

@@ -4,6 +4,16 @@ const Customer = require("../models/Customer");
 // const Notification = require("../models/Notification"); // NOTIFICATION: commented
 const { createAndSendFeedbackRequest } = require("./feedbackController");
 
+// ==================== BRANCH SCOPING HELPER ====================
+// Superadmin always sees everything.
+// Any other role (admin OR employee) that has a branch attached is
+// restricted to that branch. Previously only "admin" was checked here,
+// which meant employees could view/edit/delete customers across ALL
+// branches — this closes that gap.
+function userIsBranchScoped(req) {
+  return !!(req.user && req.user.branch && req.user.role !== "superadmin");
+}
+
 // ==================== VIP / CUSTOMER CLASS LOGIC ====================
 function computeCustomerClass(customerDoc) {
   if (customerDoc.manualClassOverride) return customerDoc.manualClassOverride;
@@ -219,7 +229,7 @@ exports.addVisit = async (req, res) => {
       });
     }
 
-    if (req.user && req.user.role === "admin" && req.user.branch) {
+    if (userIsBranchScoped(req)) {
       if (customer.branch?.toString() !== req.user.branch?.toString()) {
         return res.status(403).json({
           success: false,
@@ -325,7 +335,7 @@ exports.updateVisit = async (req, res) => {
       return res.status(404).json({ success: false, message: "Customer not found" });
     }
 
-    if (req.user && req.user.role === "admin" && req.user.branch) {
+    if (userIsBranchScoped(req)) {
       if (customer.branch?.toString() !== req.user.branch?.toString()) {
         return res.status(403).json({
           success: false,
@@ -463,7 +473,7 @@ exports.fulfillRequirement = async (req, res) => {
       return res.status(404).json({ success: false, message: "Customer not found" });
     }
 
-    if (req.user && req.user.role === "admin" && req.user.branch) {
+    if (userIsBranchScoped(req)) {
       if (customer.branch?.toString() !== req.user.branch?.toString()) {
         return res.status(403).json({
           success: false,
@@ -511,7 +521,7 @@ exports.getPendingRequirements = async (req, res) => {
   try {
     const { category, search } = req.query;
     const filter = {};
-    if (req.user && req.user.role === "admin" && req.user.branch) {
+    if (userIsBranchScoped(req)) {
       filter.branch = req.user.branch;
     } else if (req.query.branch) {
       filter.branch = req.query.branch;
@@ -608,7 +618,7 @@ exports.getCustomers = async (req, res) => {
   try {
     const filter = {};
 
-    if (req.user && req.user.role === "admin" && req.user.branch) {
+    if (userIsBranchScoped(req)) {
       filter.branch = req.user.branch;
     } else if (req.query.branch) {
       filter.branch = req.query.branch;
@@ -650,7 +660,7 @@ exports.getCustomerById = async (req, res) => {
       });
     }
 
-    if (req.user && req.user.role === "admin" && req.user.branch) {
+    if (userIsBranchScoped(req)) {
       const customerBranchId = customer.branch?._id?.toString() || customer.branch?.toString();
       if (customerBranchId !== req.user.branch.toString()) {
         return res.status(403).json({
@@ -715,7 +725,7 @@ exports.getCustomerReferralCircle = async (req, res) => {
 exports.getDistinctProfessions = async (req, res) => {
   try {
     const filter = {};
-    if (req.user && req.user.role === "admin" && req.user.branch) {
+    if (userIsBranchScoped(req)) {
       filter.branch = req.user.branch;
     }
     filter.profession = { $ne: null, $ne: "" };
@@ -741,7 +751,7 @@ exports.getDistinctProfessions = async (req, res) => {
 exports.getDistinctCommunities = async (req, res) => {
   try {
     const filter = {};
-    if (req.user && req.user.role === "admin" && req.user.branch) {
+    if (userIsBranchScoped(req)) {
       filter.branch = req.user.branch;
     }
     filter.community = { $ne: null, $ne: "" };
@@ -876,7 +886,7 @@ exports.updateCustomer = async (req, res) => {
     }
 
     // Branch permission check
-    if (req.user && req.user.role === "admin" && req.user.branch) {
+    if (userIsBranchScoped(req)) {
       const customerBranchId = existingCustomer.branch?._id?.toString() || existingCustomer.branch?.toString();
       if (customerBranchId !== req.user.branch.toString()) {
         return res.status(403).json({
@@ -961,7 +971,7 @@ exports.deleteCustomer = async (req, res) => {
       });
     }
 
-    if (req.user && req.user.role === "admin" && req.user.branch) {
+    if (userIsBranchScoped(req)) {
       if (existingCustomer.branch.toString() !== req.user.branch.toString()) {
         return res.status(403).json({
           success: false,
@@ -1002,7 +1012,7 @@ exports.getVisitByNumber = async (req, res) => {
       });
     }
 
-    if (req.user && req.user.role === "admin" && req.user.branch) {
+    if (userIsBranchScoped(req)) {
       if (customer.branch?.toString() !== req.user.branch?.toString()) {
         return res.status(403).json({
           success: false,
@@ -1051,7 +1061,7 @@ exports.deleteVisit = async (req, res) => {
       return res.status(404).json({ success: false, message: "Customer not found" });
     }
 
-    if (req.user && req.user.role === "admin" && req.user.branch) {
+    if (userIsBranchScoped(req)) {
       if (customer.branch?.toString() !== req.user.branch?.toString()) {
         return res.status(403).json({
           success: false,
