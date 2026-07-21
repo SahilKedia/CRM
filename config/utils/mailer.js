@@ -41,7 +41,7 @@ exports.sendFeedbackEmail = async (customerEmail, customerName, feedbackLink) =>
           </p>
 
           <div style="text-align:center; margin:28px 0;">
-            <a href="${feedbackLink}"
+             <a href="${googleReviewLink}" target="_blank" class="btn google-btn">
                style="display:inline-block; padding:14px 36px; background:#c9a227;
                color:#ffffff; text-decoration:none; border-radius:4px; font-size:14px;
                letter-spacing:0.5px;">
