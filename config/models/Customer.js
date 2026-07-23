@@ -1,6 +1,42 @@
 const mongoose = require("mongoose");
 
-// Sub‑schema for each visit in the visits array
+// Sub-schema for a single jewelry item (gold, diamond, or polki)
+const JewelryItemSchema = new mongoose.Schema(
+  {
+    description: {
+      type: String, // e.g. "Ring", "Necklace", "Bangle set"
+      trim: true,
+      required: true,
+    },
+    weight: {
+      type: String, // optional free text, e.g. "10g", "2.5ct"
+      trim: true,
+    },
+    images: [String],
+    conclusion: {
+      type: String,
+      enum: [
+        "pending",
+        "sold",
+        "just see",
+        "shortlisted",
+        "on approval",
+        "on order",
+      ],
+      default: "pending",
+    },
+    remarks: {
+      type: String,
+      trim: true,
+    },
+  },
+  {
+    _id: true, // each item gets its own id so it can be updated/removed individually
+    timestamps: true,
+  }
+);
+
+// Sub-schema for each visit in the visits array
 const VisitSchema = new mongoose.Schema(
   {
     visitNumber: {
@@ -15,23 +51,12 @@ const VisitSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    // Jewelry details
-    gold: {
-      type: String,
-      trim: true,
-    },
-    diamond: {
-      type: String,
-      trim: true,
-    },
-    polki: {
-      type: String,
-      trim: true,
-    },
-    // Image URLs (stored as arrays of strings)
-    goldImages: [String],
-    diamondImages: [String],
-    polkiImages: [String],
+
+    // Multiple items per category, each with its own conclusion
+    goldItems: [JewelryItemSchema],
+    diamondItems: [JewelryItemSchema],
+    polkiItems: [JewelryItemSchema],
+
     requirement: {
       type: String,
       trim: true,
@@ -45,18 +70,6 @@ const VisitSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    conclusion: {
-      type: String,
-      enum: [
-        "pending",
-        "sold",
-        "just see",
-        "shortlisted",
-        "on approval",
-        "on order",
-      ],
-      default: "pending",
-    },
     whoAttend: {
       type: String,
       trim: true,
@@ -65,10 +78,22 @@ const VisitSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Per-visit reminder (routes/customerRoutes.js reads/writes visit.reminder —
+    // this field was missing before, so those endpoints were throwing).
+    reminder: {
+      date: Date,
+      note: String,
+      status: {
+        type: String,
+        enum: ["pending", "completed"],
+        default: "pending",
+      },
+      completedAt: Date,
+    },
   },
   {
-    _id: false, // We don't need a separate _id for each visit; use visitNumber as identifier
-    timestamps: true, // Adds createdAt and updatedAt for each visit
+    _id: false, // use visitNumber as identifier, not a separate _id
+    timestamps: true,
   }
 );
 
@@ -116,8 +141,6 @@ const CustomerSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    
-    // ✅ FIX: Move these here (not in a comment)
     additionalInfo: {
       type: String,
       trim: true,
@@ -127,7 +150,7 @@ const CustomerSchema = new mongoose.Schema(
       type: String,
       default: undefined,
     },
-    
+
     // Reference / referral
     referredBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -137,7 +160,7 @@ const CustomerSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    
+
     // ====================
     // Branch & Assignment
     // ====================
@@ -151,40 +174,25 @@ const CustomerSchema = new mongoose.Schema(
       ref: "Employee",
       required: true,
     },
-    
+
     // ====================
     // Visits Array – all visits are stored here
     // ====================
     visits: [VisitSchema],
 
     // ====================
-    // Top‑level fields mirroring the latest visit (for backward compatibility)
+    // Top-level fields mirroring the latest visit (for backward compatibility)
     // ====================
     visitDate: Date,
     purposeOfVisit: String,
-    gold: String,
-    diamond: String,
-    polki: String,
-    goldImages: [String],
-    diamondImages: [String],
-    polkiImages: [String],
+    goldItems: [JewelryItemSchema],
+    diamondItems: [JewelryItemSchema],
+    polkiItems: [JewelryItemSchema],
     requirement: String,
-    conclusion: {
-      type: String,
-      enum: [
-        "pending",
-        "sold",
-        "just see",
-        "shortlisted",
-        "on approval",
-        "on order",
-      ],
-      default: "pending",
-    },
     whoAttend: String,
     helper: String,
 
-    // Top‑level reminder – this is the ONLY reminder used by the app.
+    // Top-level reminder – this is the ONLY reminder used by the app.
     reminder: {
       date: Date,
       note: String,

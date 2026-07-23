@@ -15,28 +15,148 @@ function userIsBranchScoped(req) {
 }
 
 // ==================== VIP / CUSTOMER CLASS LOGIC ====================
+// Conclusions now live per jewelry item (goldItems / diamondItems / polkiItems),
+// not on the visit as a whole, so we count across all items in all visits.
 function computeCustomerClass(customerDoc) {
   if (customerDoc.manualClassOverride) return customerDoc.manualClassOverride;
 
   const visits = customerDoc.visits || [];
   const numberOfVisit = customerDoc.numberOfVisit || visits.length || 1;
 
-  const totalItems = visits.reduce((sum, v) => {
-    let count = 0;
-    if (v.gold) count++;
-    if (v.diamond) count++;
-    if (v.polki) count++;
-    return sum + count;
-  }, 0);
+  let totalItems = 0;
+  let soldItems = 0;
 
-  const soldVisits = visits.filter((v) => v.conclusion === "sold").length;
+  visits.forEach((v) => {
+    ["goldItems", "diamondItems", "polkiItems"].forEach((key) => {
+      (v[key] || []).forEach((item) => {
+        totalItems++;
+        if (item.conclusion === "sold") soldItems++;
+      });
+    });
+  });
 
   const hasProfession = !!(customerDoc.profession && customerDoc.profession.trim());
 
-  if (soldVisits >= 1 && totalItems >= 5) return "Big Spender";
+  if (soldItems >= 1 && totalItems >= 5) return "Big Spender";
   if (numberOfVisit >= 5) return "Loyal";
   if (hasProfession && numberOfVisit >= 2) return "VIP";
   return "Regular";
+}
+
+// ==================== JEWELRY ITEM HELPERS ====================
+// Frontend contract for multi-item, multi-conclusion visits:
+//
+// Send a JSON string per category, e.g. `goldItems`:
+//   [
+//     { "description": "Ring", "weight": "10g", "conclusion": "sold", "remarks": "...", "imageCount": 2 },
+//     { "description": "Necklace", "conclusion": "on order", "imageCount": 0 }
+//   ]
+// and upload the actual files under the existing flat field name (e.g. `goldImages`),
+// in the SAME ORDER the items appear, `imageCount` files per item.
+//
+// For updates, each item may include `_id` (to edit an existing item instead of
+// creating a new one), `existingImages` (URLs to keep), and `newImageCount`
+// (how many of the newly uploaded files, in order, belong to this item).
+
+function safeParseItems(raw) {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return raw;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Build a brand-new items array (used for addCustomer / addVisit).
+// Falls back to a single legacy item if only the old flat string field was sent.
+function buildNewItems(itemsRaw, uploadedFiles, legacySingleValue) {
+  let itemsMeta = safeParseItems(itemsRaw);
+
+  if (!itemsMeta) {
+    if (legacySingleValue && legacySingleValue.trim()) {
+      itemsMeta = [
+        {
+          description: legacySingleValue.trim(),
+          conclusion: "pending",
+          imageCount: uploadedFiles.length,
+        },
+      ];
+    } else {
+      itemsMeta = [];
+    }
+  }
+
+  let cursor = 0;
+  const items = itemsMeta
+    .filter((it) => it && it.description && String(it.description).trim())
+    .map((it) => {
+      const count = Number.isInteger(it.imageCount) ? it.imageCount : 0;
+      const images = uploadedFiles.slice(cursor, cursor + count);
+      cursor += count;
+      return {
+        description: String(it.description).trim(),
+        weight: it.weight?.toString().trim() || undefined,
+        conclusion: it.conclusion || "pending",
+        remarks: it.remarks?.toString().trim() || undefined,
+        images: images.length ? images : undefined,
+      };
+    });
+
+  // Don't silently drop any uploaded files that weren't accounted for.
+  if (cursor < uploadedFiles.length && items.length > 0) {
+    const leftover = uploadedFiles.slice(cursor);
+    const last = items[items.length - 1];
+    last.images = [...(last.images || []), ...leftover];
+  }
+
+  return items;
+}
+
+// Build an updated items array (used for updateVisit), merging against the
+// visit's existing items so edits, new items, and removals all work.
+// Returns `undefined` if the category wasn't sent at all (meaning: leave it untouched).
+function buildUpdatedItems(existingItems, itemsRaw, uploadedFiles) {
+  const itemsMeta = safeParseItems(itemsRaw);
+  if (itemsMeta === null) return undefined; // category not sent — don't touch it
+
+  const existingById = new Map(
+    (existingItems || [])
+      .filter((it) => it && it._id)
+      .map((it) => [it._id.toString(), it])
+  );
+
+  let cursor = 0;
+  const result = itemsMeta
+    .filter((it) => it && it.description && String(it.description).trim())
+    .map((it) => {
+      const count = Number.isInteger(it.newImageCount) ? it.newImageCount : 0;
+      const newImages = uploadedFiles.slice(cursor, cursor + count);
+      cursor += count;
+
+      const keptImages = Array.isArray(it.existingImages) ? it.existingImages : [];
+      const images = [...keptImages, ...newImages];
+
+      const matchedExisting = it._id ? existingById.get(String(it._id)) : undefined;
+
+      return {
+        _id: matchedExisting ? matchedExisting._id : undefined,
+        description: String(it.description).trim(),
+        weight: it.weight?.toString().trim() || undefined,
+        conclusion: it.conclusion || matchedExisting?.conclusion || "pending",
+        remarks: it.remarks?.toString().trim() || undefined,
+        images: images.length ? images : undefined,
+      };
+    });
+
+  if (cursor < uploadedFiles.length && result.length > 0) {
+    const leftover = uploadedFiles.slice(cursor);
+    const last = result[result.length - 1];
+    last.images = [...(last.images || []), ...leftover];
+  }
+
+  return result;
 }
 
 // ==================== CONTROLLER FUNCTIONS ====================
@@ -53,15 +173,17 @@ exports.addCustomer = async (req, res) => {
       visitDate,
       purposeOfVisit,
       numberOfVisit,
-      gold,
-      diamond,
-      polki,
+      gold, // legacy single-value fallback
+      diamond, // legacy single-value fallback
+      polki, // legacy single-value fallback
+      goldItems, // JSON string: [{ description, weight, conclusion, remarks, imageCount }]
+      diamondItems,
+      polkiItems,
       requirement,
       whoAttend,
       helper,
       reminderDate,
       reminderMessage,
-      conclusion,
       birthday,
       anniversary,
       profession,
@@ -111,6 +233,12 @@ exports.addCustomer = async (req, res) => {
     const diamondImages = (req.files?.diamondImages || []).map((f) => `uploads/customers/${f.filename}`);
     const polkiImages = (req.files?.polkiImages || []).map((f) => `uploads/customers/${f.filename}`);
 
+    // Build item arrays — each item carries its own description + conclusion,
+    // e.g. gold "Ring" -> sold, diamond "Ring" -> on order, in the same visit.
+    const goldItemsBuilt = buildNewItems(goldItems, goldImages, gold);
+    const diamondItemsBuilt = buildNewItems(diamondItems, diamondImages, diamond);
+    const polkiItemsBuilt = buildNewItems(polkiItems, polkiImages, polki);
+
     // Handle customer profile photo (single image, optional)
     const customerImageFile = req.files?.customerImage?.[0];
     const customerImage = customerImageFile
@@ -148,15 +276,11 @@ exports.addCustomer = async (req, res) => {
       visitNumber: 1,
       visitDate: visitDate ? new Date(visitDate) : new Date(),
       purposeOfVisit: purposeOfVisit?.trim() || undefined,
-      gold: gold || undefined,
-      diamond: diamond || undefined,
-      polki: polki || undefined,
-      goldImages: goldImages.length > 0 ? goldImages : undefined,
-      diamondImages: diamondImages.length > 0 ? diamondImages : undefined,
-      polkiImages: polkiImages.length > 0 ? polkiImages : undefined,
+      goldItems: goldItemsBuilt.length ? goldItemsBuilt : undefined,
+      diamondItems: diamondItemsBuilt.length ? diamondItemsBuilt : undefined,
+      polkiItems: polkiItemsBuilt.length ? polkiItemsBuilt : undefined,
       requirement: trimmedRequirement,
       requirementStatus: trimmedRequirement ? "pending" : "none",
-      conclusion: conclusion || "pending",
       whoAttend: whoAttend?.trim() || undefined,
       helper: helper?.trim() || undefined,
     };
@@ -175,17 +299,13 @@ exports.addCustomer = async (req, res) => {
       visitDate: firstVisit.visitDate,
       purposeOfVisit: firstVisit.purposeOfVisit,
       numberOfVisit: 1,
-      gold: gold || undefined,
-      diamond: diamond || undefined,
-      polki: polki || undefined,
-      goldImages: goldImages.length > 0 ? goldImages : undefined,
-      diamondImages: diamondImages.length > 0 ? diamondImages : undefined,
-      polkiImages: polkiImages.length > 0 ? polkiImages : undefined,
+      goldItems: firstVisit.goldItems,
+      diamondItems: firstVisit.diamondItems,
+      polkiItems: firstVisit.polkiItems,
       requirement: trimmedRequirement,
       whoAttend: whoAttend?.trim() || undefined,
       helper: helper?.trim() || undefined,
       reminder: finalReminder,
-      conclusion: conclusion || "pending",
       birthday: birthday?.trim() || undefined,
       anniversary: anniversary?.trim() || undefined,
       profession: profession?.trim() || undefined,
@@ -240,11 +360,13 @@ exports.addVisit = async (req, res) => {
 
     const {
       purposeOfVisit,
-      gold,
-      diamond,
-      polki,
+      gold, // legacy single-value fallback
+      diamond, // legacy single-value fallback
+      polki, // legacy single-value fallback
+      goldItems,
+      diamondItems,
+      polkiItems,
       requirement,
-      conclusion,
       whoAttend,
       helper,
       visitDate,
@@ -253,6 +375,10 @@ exports.addVisit = async (req, res) => {
     const goldImages = (req.files?.goldImages || []).map((f) => `uploads/customers/${f.filename}`);
     const diamondImages = (req.files?.diamondImages || []).map((f) => `uploads/customers/${f.filename}`);
     const polkiImages = (req.files?.polkiImages || []).map((f) => `uploads/customers/${f.filename}`);
+
+    const goldItemsBuilt = buildNewItems(goldItems, goldImages, gold);
+    const diamondItemsBuilt = buildNewItems(diamondItems, diamondImages, diamond);
+    const polkiItemsBuilt = buildNewItems(polkiItems, polkiImages, polki);
 
     if (!customer.visits) {
       customer.visits = [];
@@ -277,15 +403,11 @@ exports.addVisit = async (req, res) => {
       visitNumber: customer.visits.length + 1,
       visitDate: visitDate ? new Date(visitDate) : new Date(),
       purposeOfVisit: purposeOfVisit?.trim() || undefined,
-      gold: gold || undefined,
-      diamond: diamond || undefined,
-      polki: polki || undefined,
-      goldImages: goldImages.length ? goldImages : undefined,
-      diamondImages: diamondImages.length ? diamondImages : undefined,
-      polkiImages: polkiImages.length ? polkiImages : undefined,
+      goldItems: goldItemsBuilt.length ? goldItemsBuilt : undefined,
+      diamondItems: diamondItemsBuilt.length ? diamondItemsBuilt : undefined,
+      polkiItems: polkiItemsBuilt.length ? polkiItemsBuilt : undefined,
       requirement: trimmedRequirement,
       requirementStatus: trimmedRequirement ? "pending" : "none",
-      conclusion: conclusion || "pending",
       whoAttend: whoAttend?.trim() || undefined,
       helper: helper?.trim() || undefined,
     };
@@ -296,14 +418,10 @@ exports.addVisit = async (req, res) => {
     const latestVisit = customer.visits[customer.visits.length - 1];
     customer.visitDate = latestVisit.visitDate;
     customer.purposeOfVisit = latestVisit.purposeOfVisit;
-    customer.gold = latestVisit.gold;
-    customer.diamond = latestVisit.diamond;
-    customer.polki = latestVisit.polki;
-    customer.goldImages = latestVisit.goldImages;
-    customer.diamondImages = latestVisit.diamondImages;
-    customer.polkiImages = latestVisit.polkiImages;
+    customer.goldItems = latestVisit.goldItems;
+    customer.diamondItems = latestVisit.diamondItems;
+    customer.polkiItems = latestVisit.polkiItems;
     customer.requirement = latestVisit.requirement;
-    customer.conclusion = latestVisit.conclusion;
     customer.whoAttend = latestVisit.whoAttend;
     customer.helper = latestVisit.helper;
 
@@ -358,50 +476,33 @@ exports.updateVisit = async (req, res) => {
 
     const {
       purposeOfVisit,
-      gold,
-      diamond,
-      polki,
+      // Per-category JSON array of items, e.g.:
+      // [{ "_id": "...", "description": "Ring", "conclusion": "sold",
+      //    "existingImages": [...], "newImageCount": 1 }, { ...new item, no _id... }]
+      goldItems,
+      diamondItems,
+      polkiItems,
       requirement,
-      conclusion,
       whoAttend,
       helper,
       visitDate,
-      removeGoldImages,
-      removeDiamondImages,
-      removePolkiImages,
     } = req.body;
 
     const newGoldImages = (req.files?.goldImages || []).map((f) => `uploads/customers/${f.filename}`);
     const newDiamondImages = (req.files?.diamondImages || []).map((f) => `uploads/customers/${f.filename}`);
     const newPolkiImages = (req.files?.polkiImages || []).map((f) => `uploads/customers/${f.filename}`);
 
-    let goldImages = visit.goldImages || [];
-    let diamondImages = visit.diamondImages || [];
-    let polkiImages = visit.polkiImages || [];
-
-    const getFilename = (p) => p.split("/").pop().split("?")[0];
-
-    if (removeGoldImages) {
-      const toRemove = JSON.parse(removeGoldImages).map(getFilename);
-      goldImages = goldImages.filter((url) => !toRemove.includes(getFilename(url)));
-    }
-    if (removeDiamondImages) {
-      const toRemove = JSON.parse(removeDiamondImages).map(getFilename);
-      diamondImages = diamondImages.filter((url) => !toRemove.includes(getFilename(url)));
-    }
-    if (removePolkiImages) {
-      const toRemove = JSON.parse(removePolkiImages).map(getFilename);
-      polkiImages = polkiImages.filter((url) => !toRemove.includes(getFilename(url)));
-    }
-
-    goldImages = [...goldImages, ...newGoldImages];
-    diamondImages = [...diamondImages, ...newDiamondImages];
-    polkiImages = [...polkiImages, ...newPolkiImages];
+    // buildUpdatedItems returns undefined when the category wasn't sent at all,
+    // meaning "leave this category's items untouched" — otherwise it fully
+    // replaces the category with the (possibly edited/added/removed) item list.
+    const updatedGoldItems = buildUpdatedItems(visit.goldItems, goldItems, newGoldImages);
+    const updatedDiamondItems = buildUpdatedItems(visit.diamondItems, diamondItems, newDiamondImages);
+    const updatedPolkiItems = buildUpdatedItems(visit.polkiItems, polkiItems, newPolkiImages);
 
     if (purposeOfVisit !== undefined) visit.purposeOfVisit = purposeOfVisit.trim();
-    if (gold !== undefined) visit.gold = gold;
-    if (diamond !== undefined) visit.diamond = diamond;
-    if (polki !== undefined) visit.polki = polki;
+    if (updatedGoldItems !== undefined) visit.goldItems = updatedGoldItems.length ? updatedGoldItems : undefined;
+    if (updatedDiamondItems !== undefined) visit.diamondItems = updatedDiamondItems.length ? updatedDiamondItems : undefined;
+    if (updatedPolkiItems !== undefined) visit.polkiItems = updatedPolkiItems.length ? updatedPolkiItems : undefined;
 
     if (requirement !== undefined) {
       const trimmed = requirement.trim();
@@ -419,14 +520,9 @@ exports.updateVisit = async (req, res) => {
       }
     }
 
-    if (conclusion !== undefined) visit.conclusion = conclusion;
     if (whoAttend !== undefined) visit.whoAttend = whoAttend.trim();
     if (helper !== undefined) visit.helper = helper.trim();
     if (visitDate) visit.visitDate = new Date(visitDate);
-
-    visit.goldImages = goldImages.length ? goldImages : undefined;
-    visit.diamondImages = diamondImages.length ? diamondImages : undefined;
-    visit.polkiImages = polkiImages.length ? polkiImages : undefined;
 
     customer.visits[visitIndex] = visit;
     customer.markModified("visits");
@@ -434,14 +530,10 @@ exports.updateVisit = async (req, res) => {
     if (visitIndex === customer.visits.length - 1) {
       customer.visitDate = visit.visitDate;
       customer.purposeOfVisit = visit.purposeOfVisit;
-      customer.gold = visit.gold;
-      customer.diamond = visit.diamond;
-      customer.polki = visit.polki;
-      customer.goldImages = visit.goldImages;
-      customer.diamondImages = visit.diamondImages;
-      customer.polkiImages = visit.polkiImages;
+      customer.goldItems = visit.goldItems;
+      customer.diamondItems = visit.diamondItems;
+      customer.polkiItems = visit.polkiItems;
       customer.requirement = visit.requirement;
-      customer.conclusion = visit.conclusion;
       customer.whoAttend = visit.whoAttend;
       customer.helper = visit.helper;
     }
@@ -531,11 +623,16 @@ exports.getPendingRequirements = async (req, res) => {
       .select("name phone email branch visits")
       .populate("branch", "name city");
 
+    // category filter now refers to an items array (goldItems/diamondItems/polkiItems)
+    const categoryKey = category
+      ? (category.endsWith("Items") ? category : `${category}Items`)
+      : null;
+
     const results = [];
     customers.forEach((c) => {
       c.visits.forEach((v) => {
         if (v.requirementStatus !== "pending") return;
-        if (category && !v[category]) return;
+        if (categoryKey && !(v[categoryKey] && v[categoryKey].length)) return;
         if (search && !v.requirement?.toLowerCase().includes(search.toLowerCase())) return;
 
         results.push({
@@ -546,7 +643,11 @@ exports.getPendingRequirements = async (req, res) => {
           branch: c.branch,
           visitNumber: v.visitNumber,
           requirement: v.requirement,
-          category: { gold: v.gold, diamond: v.diamond, polki: v.polki },
+          items: {
+            gold: v.goldItems || [],
+            diamond: v.diamondItems || [],
+            polki: v.polkiItems || [],
+          },
           visitDate: v.visitDate,
         });
       });
@@ -1082,27 +1183,19 @@ exports.deleteVisit = async (req, res) => {
       const latestVisit = customer.visits[customer.visits.length - 1];
       customer.visitDate = latestVisit.visitDate;
       customer.purposeOfVisit = latestVisit.purposeOfVisit;
-      customer.gold = latestVisit.gold;
-      customer.diamond = latestVisit.diamond;
-      customer.polki = latestVisit.polki;
-      customer.goldImages = latestVisit.goldImages;
-      customer.diamondImages = latestVisit.diamondImages;
-      customer.polkiImages = latestVisit.polkiImages;
+      customer.goldItems = latestVisit.goldItems;
+      customer.diamondItems = latestVisit.diamondItems;
+      customer.polkiItems = latestVisit.polkiItems;
       customer.requirement = latestVisit.requirement;
-      customer.conclusion = latestVisit.conclusion;
       customer.whoAttend = latestVisit.whoAttend;
       customer.helper = latestVisit.helper;
     } else {
       customer.visitDate = undefined;
       customer.purposeOfVisit = undefined;
-      customer.gold = undefined;
-      customer.diamond = undefined;
-      customer.polki = undefined;
-      customer.goldImages = undefined;
-      customer.diamondImages = undefined;
-      customer.polkiImages = undefined;
+      customer.goldItems = undefined;
+      customer.diamondItems = undefined;
+      customer.polkiItems = undefined;
       customer.requirement = undefined;
-      customer.conclusion = undefined;
       customer.whoAttend = undefined;
       customer.helper = undefined;
     }
