@@ -87,7 +87,7 @@ if (typeof addCustomer === "function") {
       { name: "diamondImages", maxCount: 100 },
       { name: "polkiImages", maxCount: 100 },
       { name: "customerImage", maxCount: 1 },
-      { name: "additionalInfoImage", maxCount: 100 } // ✅ ADDED
+      { name: "additionalInfoImage", maxCount: 100 } // belongs to the first VISIT, handled in addCustomer
     ]),
     upload.handleUploadErrors,
     addCustomer
@@ -125,7 +125,6 @@ if (typeof updateCustomer === "function") {
     restrictTo("admin", "employee"),
     upload.fields([
       { name: "customerImage", maxCount: 1 },
-      { name: "additionalInfoImage", maxCount: 100 } // ✅ ADDED
     ]),
     upload.handleUploadErrors,
     updateCustomer
@@ -151,6 +150,7 @@ if (typeof addVisit === "function") {
       { name: "goldImages", maxCount: 100 },
       { name: "diamondImages", maxCount: 100 },
       { name: "polkiImages", maxCount: 100 },
+      { name: "additionalInfoImage", maxCount: 100 },
     ]),
     upload.handleUploadErrors,
     addVisit
@@ -169,6 +169,7 @@ if (typeof updateVisit === "function") {
       { name: "goldImages", maxCount: 10 },
       { name: "diamondImages", maxCount: 10 },
       { name: "polkiImages", maxCount: 10 },
+      { name: "additionalInfoImage", maxCount: 10 },
     ]),
     upload.handleUploadErrors,
     updateVisit

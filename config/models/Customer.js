@@ -65,6 +65,9 @@ const VisitSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    additionalInfo: { type: String },
+    additionalInfoImage: { type: [String], default: undefined }, // ✅ FIXED — array of relative paths, like goldImages
+
   },
   {
     _id: false, // We don't need a separate _id for each visit; use visitNumber as identifier
@@ -128,8 +131,6 @@ const CustomerSchema = new mongoose.Schema(
     },
 
     // backend/models/Customer.js
-    additionalInfo: { type: String },
-    additionalInfoImage: { type: [String], default: undefined }, // ✅ FIXED — array of relative paths, like goldImages
     // ====================
     // Branch & Assignment
     // ====================

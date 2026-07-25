@@ -158,6 +158,9 @@ exports.addCustomer = async (req, res) => {
       conclusion: conclusion || "pending",
       whoAttend: whoAttend?.trim() || undefined,
       helper: helper?.trim() || undefined,
+      // ✅ additionalInfo belongs to the VISIT, not the customer
+      additionalInfo: additionalInfo?.trim() || undefined,
+      additionalInfoImage: additionalInfoImage.length > 0 ? additionalInfoImage : undefined,
     };
 
     // Create customer with visits array properly initialized
@@ -167,8 +170,6 @@ exports.addCustomer = async (req, res) => {
       phone: phone?.trim() || undefined,
       address: address?.trim() || undefined,
       customerImage: customerImage,
-      additionalInfo: additionalInfo?.trim() || undefined, // ✅ ADDED
-      additionalInfoImage: additionalInfoImage.length > 0 ? additionalInfoImage : undefined, // ✅ ADDED
       branch: finalBranch,
       visits: [firstVisit],
       visitDate: firstVisit.visitDate,
@@ -247,11 +248,13 @@ exports.addVisit = async (req, res) => {
       whoAttend,
       helper,
       visitDate,
+      additionalInfo,
     } = req.body;
 
     const goldImages = (req.files?.goldImages || []).map((f) => `uploads/customers/${f.filename}`);
     const diamondImages = (req.files?.diamondImages || []).map((f) => `uploads/customers/${f.filename}`);
     const polkiImages = (req.files?.polkiImages || []).map((f) => `uploads/customers/${f.filename}`);
+    const additionalInfoImage = (req.files?.additionalInfoImage || []).map((f) => `uploads/customers/${f.filename}`);
 
     if (!customer.visits) {
       customer.visits = [];
@@ -287,6 +290,8 @@ exports.addVisit = async (req, res) => {
       conclusion: conclusion || "pending",
       whoAttend: whoAttend?.trim() || undefined,
       helper: helper?.trim() || undefined,
+      additionalInfo: additionalInfo?.trim() || undefined,
+      additionalInfoImage: additionalInfoImage.length ? additionalInfoImage : undefined,
     };
 
     customer.visits.push(newVisit);
@@ -368,15 +373,19 @@ exports.updateVisit = async (req, res) => {
       removeGoldImages,
       removeDiamondImages,
       removePolkiImages,
+      additionalInfo,
+      removeAdditionalInfoImages,
     } = req.body;
 
     const newGoldImages = (req.files?.goldImages || []).map((f) => `uploads/customers/${f.filename}`);
     const newDiamondImages = (req.files?.diamondImages || []).map((f) => `uploads/customers/${f.filename}`);
     const newPolkiImages = (req.files?.polkiImages || []).map((f) => `uploads/customers/${f.filename}`);
+    const newAdditionalInfoImages = (req.files?.additionalInfoImage || []).map((f) => `uploads/customers/${f.filename}`);
 
     let goldImages = visit.goldImages || [];
     let diamondImages = visit.diamondImages || [];
     let polkiImages = visit.polkiImages || [];
+    let additionalInfoImage = visit.additionalInfoImage || [];
 
     const getFilename = (p) => p.split("/").pop().split("?")[0];
 
@@ -392,10 +401,15 @@ exports.updateVisit = async (req, res) => {
       const toRemove = JSON.parse(removePolkiImages).map(getFilename);
       polkiImages = polkiImages.filter((url) => !toRemove.includes(getFilename(url)));
     }
+    if (removeAdditionalInfoImages) {
+      const toRemove = JSON.parse(removeAdditionalInfoImages).map(getFilename);
+      additionalInfoImage = additionalInfoImage.filter((url) => !toRemove.includes(getFilename(url)));
+    }
 
     goldImages = [...goldImages, ...newGoldImages];
     diamondImages = [...diamondImages, ...newDiamondImages];
     polkiImages = [...polkiImages, ...newPolkiImages];
+    additionalInfoImage = [...additionalInfoImage, ...newAdditionalInfoImages];
 
     if (purposeOfVisit !== undefined) visit.purposeOfVisit = purposeOfVisit.trim();
     if (gold !== undefined) visit.gold = gold;
@@ -422,10 +436,12 @@ exports.updateVisit = async (req, res) => {
     if (whoAttend !== undefined) visit.whoAttend = whoAttend.trim();
     if (helper !== undefined) visit.helper = helper.trim();
     if (visitDate) visit.visitDate = new Date(visitDate);
+    if (additionalInfo !== undefined) visit.additionalInfo = additionalInfo?.trim() || undefined;
 
     visit.goldImages = goldImages.length ? goldImages : undefined;
     visit.diamondImages = diamondImages.length ? diamondImages : undefined;
     visit.polkiImages = polkiImages.length ? polkiImages : undefined;
+    visit.additionalInfoImage = additionalInfoImage.length ? additionalInfoImage : undefined;
 
     customer.visits[visitIndex] = visit;
     customer.markModified("visits");
@@ -786,25 +802,6 @@ exports.updateCustomer = async (req, res) => {
       updateData.customerImage = `uploads/customers/${newCustomerImageFile.filename}`;
     }
 
-    // ✅ Handle additional info images (multiple, optional) — append new uploads to existing ones
-    const newAdditionalInfoImageFiles = req.files?.additionalInfoImage || [];
-    if (newAdditionalInfoImageFiles.length > 0) {
-      const existingCustomer = await Customer.findById(id).select('additionalInfoImage');
-      const existingAdditionalInfoImages = Array.isArray(existingCustomer?.additionalInfoImage)
-        ? existingCustomer.additionalInfoImage
-        : (existingCustomer?.additionalInfoImage ? [existingCustomer.additionalInfoImage] : []);
-      const newAdditionalInfoImages = newAdditionalInfoImageFiles.map(
-        (f) => `uploads/customers/${f.filename}`
-      );
-      updateData.additionalInfoImage = [...existingAdditionalInfoImages, ...newAdditionalInfoImages];
-    } else {
-      // If the frontend sends null or empty string, remove the images
-      if (updateData.additionalInfoImage === null || updateData.additionalInfoImage === '') {
-        updateData.additionalInfoImage = null;
-      }
-      // If additionalInfoImage is not in the request at all, keep it as is
-    }
-
     // Handle reminder logic
     const hasReminderDate = updateData.reminderDate !== undefined;
     const hasReminderMessage = updateData.reminderMessage !== undefined;
@@ -878,10 +875,9 @@ exports.updateCustomer = async (req, res) => {
     if (updateData.community !== undefined) {
       updateData.community = updateData.community?.trim() || undefined;
     }
-    // ✅ Handle additionalInfo
-    if (updateData.additionalInfo !== undefined) {
-      updateData.additionalInfo = updateData.additionalInfo?.trim() || undefined;
-    }
+    // additionalInfo is per-visit now (see addVisit/updateVisit) — not editable as common info
+    delete updateData.additionalInfo;
+    delete updateData.additionalInfoImage;
 
     const existingCustomer = await Customer.findById(id);
     if (!existingCustomer) {
