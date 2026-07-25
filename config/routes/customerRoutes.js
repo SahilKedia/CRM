@@ -90,6 +90,7 @@ if (typeof addCustomer === "function") {
       { name: "additionalInfoImage", maxCount: 100 } // belongs to the first VISIT, handled in addCustomer
     ]),
     upload.handleUploadErrors,
+    upload.compressImages,
     addCustomer
   );
 } else {
@@ -127,6 +128,7 @@ if (typeof updateCustomer === "function") {
       { name: "customerImage", maxCount: 1 },
     ]),
     upload.handleUploadErrors,
+    upload.compressImages,
     updateCustomer
   );
 } else {
@@ -153,6 +155,7 @@ if (typeof addVisit === "function") {
       { name: "additionalInfoImage", maxCount: 100 },
     ]),
     upload.handleUploadErrors,
+    upload.compressImages,
     addVisit
   );
 } else {
@@ -172,6 +175,7 @@ if (typeof updateVisit === "function") {
       { name: "additionalInfoImage", maxCount: 10 },
     ]),
     upload.handleUploadErrors,
+    upload.compressImages,
     updateVisit
   );
 } else {
