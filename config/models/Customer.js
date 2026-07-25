@@ -126,10 +126,10 @@ const CustomerSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-     
+
     // backend/models/Customer.js
-additionalInfo: { type: String },
-additionalInfoImage: { type: String }, // relative path, jaise customerImage
+    additionalInfo: { type: String },
+    additionalInfoImage: { type: [String], default: undefined }, // ✅ FIXED — array of relative paths, like goldImages
     // ====================
     // Branch & Assignment
     // ====================

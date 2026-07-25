@@ -117,11 +117,10 @@ exports.addCustomer = async (req, res) => {
       ? `uploads/customers/${customerImageFile.filename}`
       : undefined;
 
-    // ✅ Handle additional info image (single image, optional)
-    const additionalInfoImageFile = req.files?.additionalInfoImage?.[0];
-    const additionalInfoImage = additionalInfoImageFile
-      ? `uploads/customers/${additionalInfoImageFile.filename}`
-      : undefined;
+    // ✅ Handle additional info images (multiple, optional)
+    const additionalInfoImage = (req.files?.additionalInfoImage || []).map(
+      (f) => `uploads/customers/${f.filename}`
+    );
 
     // Handle reminder
     let finalReminder = undefined;
@@ -169,7 +168,7 @@ exports.addCustomer = async (req, res) => {
       address: address?.trim() || undefined,
       customerImage: customerImage,
       additionalInfo: additionalInfo?.trim() || undefined, // ✅ ADDED
-      additionalInfoImage: additionalInfoImage, // ✅ ADDED
+      additionalInfoImage: additionalInfoImage.length > 0 ? additionalInfoImage : undefined, // ✅ ADDED
       branch: finalBranch,
       visits: [firstVisit],
       visitDate: firstVisit.visitDate,
@@ -787,12 +786,19 @@ exports.updateCustomer = async (req, res) => {
       updateData.customerImage = `uploads/customers/${newCustomerImageFile.filename}`;
     }
 
-    // ✅ Handle additional info image
-    const newAdditionalInfoImageFile = req.files?.additionalInfoImage?.[0];
-    if (newAdditionalInfoImageFile) {
-      updateData.additionalInfoImage = `uploads/customers/${newAdditionalInfoImageFile.filename}`;
+    // ✅ Handle additional info images (multiple, optional) — append new uploads to existing ones
+    const newAdditionalInfoImageFiles = req.files?.additionalInfoImage || [];
+    if (newAdditionalInfoImageFiles.length > 0) {
+      const existingCustomer = await Customer.findById(id).select('additionalInfoImage');
+      const existingAdditionalInfoImages = Array.isArray(existingCustomer?.additionalInfoImage)
+        ? existingCustomer.additionalInfoImage
+        : (existingCustomer?.additionalInfoImage ? [existingCustomer.additionalInfoImage] : []);
+      const newAdditionalInfoImages = newAdditionalInfoImageFiles.map(
+        (f) => `uploads/customers/${f.filename}`
+      );
+      updateData.additionalInfoImage = [...existingAdditionalInfoImages, ...newAdditionalInfoImages];
     } else {
-      // If the frontend sends null or empty string, remove the image
+      // If the frontend sends null or empty string, remove the images
       if (updateData.additionalInfoImage === null || updateData.additionalInfoImage === '') {
         updateData.additionalInfoImage = null;
       }
