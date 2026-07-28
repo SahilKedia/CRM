@@ -6,7 +6,7 @@ const WHATSAPP_API_URL = `https://graph.facebook.com/v20.0/${process.env.WHATSAP
 // Header image for the template — use your own permanently-hosted logo URL.
 // Falls back to an env variable so you can change it without touching code.
 const HEADER_IMAGE_URL =
-  process.env.WHATSAPP_HEADER_IMAGE_URL || "https://maliramjewellers.com/logo.png";
+  process.env.WHATSAPP_HEADER_IMAGE_URL || "http://159.223.151.37:5000/uploads/logo.jpg";
 
 // Send customer feedback message via WhatsApp
 exports.sendFeedbackWhatsApp = async (customerPhone, customerName) => {
