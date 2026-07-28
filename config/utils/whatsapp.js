@@ -28,7 +28,7 @@ exports.sendFeedbackWhatsApp = async (customerPhone, customerName) => {
         type: "template",
         template: {
           name: "maliram_jewellers", // exact template name from WhatsApp Manager
-          language: { code: "en_US" },
+          language: { code: "en" },
           components: [
             {
               type: "header",
