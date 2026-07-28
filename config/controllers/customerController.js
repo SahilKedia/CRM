@@ -206,19 +206,29 @@ exports.addCustomer = async (req, res) => {
     // ✅ ADDED — Send WhatsApp thank-you + feedback message.
     // Fire-and-forget (not awaited) so a slow/failed WhatsApp API call
     // never delays or breaks the "Add Customer" response to the frontend.
-    if (customer.phone) {
-      const GOOGLE_REVIEW_LINK =
-        process.env.GOOGLE_REVIEW_LINK ||
-        "http://search.google.com/local/writereview?placeid=ChIJvUotJzJbGjkREhjMpQOuV-g";
+    // if (customer.phone) {
+    //   const GOOGLE_REVIEW_LINK =
+    //     process.env.GOOGLE_REVIEW_LINK ||
+    //     "http://search.google.com/local/writereview?placeid=ChIJvUotJzJbGjkREhjMpQOuV-g";
 
-      sendFeedbackWhatsApp(customer.phone, customer.name, GOOGLE_REVIEW_LINK).catch((err) => {
-        console.error(
-          "⚠️ WhatsApp message failed for customer:",
-          customer._id.toString(),
-          err.response?.data || err.message
-        );
-      });
-    }
+    //   sendFeedbackWhatsApp(customer.phone, customer.name, GOOGLE_REVIEW_LINK).catch((err) => {
+    //     console.error(
+    //       "⚠️ WhatsApp message failed for customer:",
+    //       customer._id.toString(),
+    //       err.response?.data || err.message
+    //     );
+    //   });
+    // }
+     
+
+    if (customer.phone) {
+  sendFeedbackWhatsApp(customer.phone, customer.name).catch((err) => {
+    console.error("⚠️ WhatsApp message failed for customer:", customer._id.toString(), err.response?.data || err.message);
+    });
+  }
+
+
+
 
     res.status(201).json({
       success: true,
