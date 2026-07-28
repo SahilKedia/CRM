@@ -2,8 +2,7 @@
 const Customer = require("../models/Customer");
 // const Employee = require("../models/Employee");   // NOTIFICATION: commented
 // const Notification = require("../models/Notification"); // NOTIFICATION: commented
-const { createAndSendFeedbackRequest } = require("./feedbackController");
-const { sendFeedbackWhatsApp } = require("../utils/whatsapp"); // ✅ ADDED — WhatsApp integration
+const { sendFeedbackWhatsApp } = require("../utils/whatsapp");
 
 // ==================== BRANCH SCOPING HELPER ====================
 // Superadmin always sees everything.
@@ -199,36 +198,14 @@ exports.addCustomer = async (req, res) => {
     customer.customerClass = computeCustomerClass(customer);
     await customer.save();
 
-    if (createAndSendFeedbackRequest) {
-      createAndSendFeedbackRequest(customer);
-    }
-
-    // ✅ ADDED — Send WhatsApp thank-you + feedback message.
+    // Send WhatsApp thank-you + feedback message.
     // Fire-and-forget (not awaited) so a slow/failed WhatsApp API call
     // never delays or breaks the "Add Customer" response to the frontend.
-    // if (customer.phone) {
-    //   const GOOGLE_REVIEW_LINK =
-    //     process.env.GOOGLE_REVIEW_LINK ||
-    //     "http://search.google.com/local/writereview?placeid=ChIJvUotJzJbGjkREhjMpQOuV-g";
-
-    //   sendFeedbackWhatsApp(customer.phone, customer.name, GOOGLE_REVIEW_LINK).catch((err) => {
-    //     console.error(
-    //       "⚠️ WhatsApp message failed for customer:",
-    //       customer._id.toString(),
-    //       err.response?.data || err.message
-    //     );
-    //   });
-    // }
-     
-
     if (customer.phone) {
-  sendFeedbackWhatsApp(customer.phone, customer.name).catch((err) => {
-    console.error("⚠️ WhatsApp message failed for customer:", customer._id.toString(), err.response?.data || err.message);
-    });
-  }
-
-
-
+      sendFeedbackWhatsApp(customer.phone, customer.name).catch((err) => {
+        console.error("⚠️ WhatsApp message failed for customer:", customer._id.toString(), err.response?.data || err.message);
+      });
+    }
 
     res.status(201).json({
       success: true,

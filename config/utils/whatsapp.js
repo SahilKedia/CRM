@@ -13,7 +13,10 @@ exports.sendFeedbackWhatsApp = async (customerPhone, customerName) => {
   try {
     // Ensure phone number has country code, no +, no spaces
     let formattedPhone = customerPhone.replace(/\D/g, ""); // strip non-digits
-    if (!formattedPhone.startsWith("91")) {
+    // A plain 10-digit Indian mobile number has no country code yet.
+    // Checking startsWith("91") is unreliable — plenty of real numbers
+    // (e.g. 91xxxxxxxx) legitimately start with those two digits.
+    if (formattedPhone.length === 10) {
       formattedPhone = `91${formattedPhone}`;
     }
 
