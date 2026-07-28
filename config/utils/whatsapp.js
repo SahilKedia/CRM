@@ -1,4 +1,4 @@
-// utils/whatsapp.js
+// backend/utils/whatsapp.js
 const axios = require("axios");
 
 const WHATSAPP_API_URL = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
