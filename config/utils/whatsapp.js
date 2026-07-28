@@ -3,8 +3,13 @@ const axios = require("axios");
 
 const WHATSAPP_API_URL = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
 
+// Header image for the template — use your own permanently-hosted logo URL.
+// Falls back to an env variable so you can change it without touching code.
+const HEADER_IMAGE_URL =
+  process.env.WHATSAPP_HEADER_IMAGE_URL || "https://maliramjewellers.com/logo.png";
+
 // Send customer feedback message via WhatsApp
-exports.sendFeedbackWhatsApp = async (customerPhone, customerName, googleReviewLink) => {
+exports.sendFeedbackWhatsApp = async (customerPhone, customerName) => {
   try {
     // Ensure phone number has country code, no +, no spaces
     let formattedPhone = customerPhone.replace(/\D/g, ""); // strip non-digits
@@ -19,14 +24,22 @@ exports.sendFeedbackWhatsApp = async (customerPhone, customerName, googleReviewL
         to: formattedPhone,
         type: "template",
         template: {
-          name: "maliram_jeweller", // exact template name from WhatsApp Manager
+          name: "maliram_jewellers", // exact template name from WhatsApp Manager
           language: { code: "en" },
           components: [
             {
+              type: "header",
+              parameters: [
+                {
+                  type: "image",
+                  image: { link: HEADER_IMAGE_URL },
+                },
+              ],
+            },
+            {
               type: "body",
               parameters: [
-                { type: "text", text: customerName },
-                { type: "text", text: googleReviewLink },
+                { type: "text", text: customerName }, // only {{1}} — review link is now a static button, no longer a variable
               ],
             },
           ],
