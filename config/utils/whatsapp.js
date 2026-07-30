@@ -75,7 +75,36 @@ const sendFeedbackWhatsApp = async (customerPhone, customerName) => {
     throw err;
   }
 };
+ const sendPlainWhatsAppMessage = async (toPhone, text) => {
+  try {
+    const payload = {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: toPhone,
+      type: "text",
+      text: { body: text },
+    };
+
+    const response = await axios.post(
+      `https://graph.facebook.com/v23.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    console.log("✅ Plain message sent:", response.data);
+    return response.data;
+  } catch (err) {
+    console.error("❌ Plain message error:", err.response?.data || err.message);
+    throw err;
+  }
+};
 
 module.exports = {
   sendFeedbackWhatsApp,
+  sendPlainWhatsAppMessage, // isko bhi export list mein add karo
 };
