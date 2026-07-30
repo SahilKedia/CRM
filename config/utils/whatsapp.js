@@ -14,7 +14,7 @@ const sendFeedbackWhatsApp = async (customerPhone, customerName) => {
       to: phone,
       type: "template",
       template: {
-        name: "maliram_jewellers",
+        name: "visit_thankyou_optin",
         language: {
           code: "en",
         },

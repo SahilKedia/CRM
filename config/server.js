@@ -66,6 +66,32 @@ app.get("/feedback/:token", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "feedback.html"));
 });
 
+// ===================== WHATSAPP WEBHOOK =====================
+const WHATSAPP_VERIFY_TOKEN = "maliram_webhook_secret123"; // isko yaad rakho, Meta form mein bhi yahi daalna hai
+
+// Meta verification (GET request, ek hi baar setup ke waqt aata hai)
+app.get("/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  if (mode === "subscribe" && token === WHATSAPP_VERIFY_TOKEN) {
+    console.log("✅ Webhook verified successfully");
+    res.status(200).send(challenge);
+  } else {
+    console.log("❌ Webhook verification failed");
+    res.sendStatus(403);
+  }
+});
+
+// Actual incoming events (button clicks, message status, replies)
+app.post("/webhook", (req, res) => {
+  console.log("📩 Webhook event received:");
+  console.log(JSON.stringify(req.body, null, 2));
+  res.sendStatus(200);
+});
+// ==============================================================
+
 const PORT = process.env.PORT || 5000;
 
 // Listen on all network interfaces
