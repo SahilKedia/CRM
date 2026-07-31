@@ -10,7 +10,41 @@ const transporter = nodemailer.createTransport({
     pass: process.env.SMTP_PASS,
   },
 });
+// Notify Sahil when a customer sends a "could be better" WhatsApp suggestion
+exports.sendFeedbackNotificationEmail = async ({ customerName, customerPhone, branch, comment }) => {
+  const mailOptions = {
+    from: `"Maliram Jewellers CRM" <${process.env.SMTP_USER}>`,
+    to: "sahil@maliramjewellers.com",
+    subject: `New Customer Feedback — ${customerName || "Unknown Customer"}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;">
+        <h2 style="margin-bottom:4px;">New WhatsApp Feedback</h2>
+        <p style="color:#666;margin-top:0;">A customer replied with a suggestion via WhatsApp.</p>
 
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+          <tr>
+            <td style="padding:6px 0;color:#888;">Customer</td>
+            <td style="padding:6px 0;">${customerName || "Unknown"}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0;color:#888;">Phone</td>
+            <td style="padding:6px 0;">${customerPhone}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0;color:#888;">Branch</td>
+            <td style="padding:6px 0;">${branch || "N/A"}</td>
+          </tr>
+        </table>
+
+        <div style="background:#f4f4f4;padding:14px;border-radius:8px;">
+          <p style="margin:0;white-space:pre-wrap;">${comment}</p>
+        </div>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
 // Send customer feedback email
 exports.sendFeedbackEmail = async (customerEmail, customerName, feedbackLink) => {
   const mailOptions = {

@@ -18,6 +18,11 @@ const adminRoutes = require("./routes/adminRoutes");
 // WhatsApp Utility
 const { sendPlainWhatsAppMessage } = require("./utils/whatsapp");
 
+// Feedback flow dependencies
+const Feedback = require("./models/Feedback");
+const Customer = require("./models/Customer");
+const { sendFeedbackNotificationEmail } = require("./utils/mailer");
+
 const app = express();
 
 // ===================== DATABASE =====================
@@ -73,6 +78,16 @@ app.get("/feedback/:token", (req, res) => {
 
 const WHATSAPP_VERIFY_TOKEN = "maliram_webhook_secret123";
 
+// Normalize incoming WhatsApp "from" number (e.g. "919999999999")
+// to match how phone is stored on Customer (assumed 10-digit).
+function normalizePhone(rawPhone) {
+  let phone = String(rawPhone).replace(/\D/g, "");
+  if (phone.length === 12 && phone.startsWith("91")) {
+    phone = phone.slice(2);
+  }
+  return phone;
+}
+
 // Meta Verification
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -113,55 +128,95 @@ app.post("/webhook", async (req, res) => {
 
     console.log("📨 Incoming Message Type:", message.type);
 
-    // Handle Interactive Button Reply
-    if (message.type === "button") {
-      const buttonText = message.button?.text;
-      const customerPhone = message.from;
+    const rawPhone = message.from;
+    const normalizedPhone = normalizePhone(rawPhone);
 
-      console.log(`🔘 Button Clicked: ${buttonText}`);
-      console.log(`📱 Customer: ${customerPhone}`);
-
-      if (
-        buttonText === "Great experience!" ||
-        buttonText === "Could be better"
-      ) {
-        const communityMessage =
-          "Thank you! ❤️\n\nStay connected with us for updates on new arrivals & exclusive offers.\n\nJoin our WhatsApp Channel:\nhttps://whatsapp.com/channel/0029Vb80rMoF6sn58DSye70g";
-
-        await sendPlainWhatsAppMessage(customerPhone, communityMessage);
-
-        console.log(`✅ Community link sent to ${customerPhone}`);
-      }
-    }
-
-    // Handle Interactive Reply Buttons (new Meta format)
-    else if (message.type === "interactive") {
-      const customerPhone = message.from;
-
+    // ===================== BUTTON CLICKS =====================
+    // Covers both the legacy "button" format and the newer "interactive" format
+    if (message.type === "button" || message.type === "interactive") {
       const buttonTitle =
+        message.button?.text ||
         message.interactive?.button_reply?.title ||
         message.interactive?.list_reply?.title;
 
-      console.log(`🔘 Interactive Reply: ${buttonTitle}`);
+      console.log(`🔘 Button Clicked: ${buttonTitle}`);
+      console.log(`📱 Customer: ${rawPhone}`);
 
-      if (
-        buttonTitle === "Great experience!" ||
-        buttonTitle === "Could be better"
-      ) {
+      if (buttonTitle === "Great experience!") {
         const communityMessage =
-          "Thank you! 🙏\n\nStay connected with us for updates on new arrivals & exclusive offers.\n\nJoin our WhatsApp Channel:\nhttps://whatsapp.com/channel/0029Vb80rMoF6sn58DSye70g";
+          "Thank you! ❤️\n\nStay connected with us for updates on new arrivals & exclusive offers.\n\nJoin our WhatsApp Channel:\nhttps://whatsapp.com/channel/0029Vb80rMoF6sn58DSye70g";
 
-        await sendPlainWhatsAppMessage(customerPhone, communityMessage);
+        await sendPlainWhatsAppMessage(rawPhone, communityMessage);
 
-        console.log(`✅ Community link sent to ${customerPhone}`);
+        console.log(`✅ Community link sent to ${rawPhone}`);
+      }
+
+      else if (buttonTitle === "Could be better") {
+        // Ask the customer for their suggestion
+        const askMessage =
+          "We're sorry your experience wasn't perfect. 🙏\nPlease reply with your suggestion, and we'll work on improving.";
+
+        await sendPlainWhatsAppMessage(rawPhone, askMessage);
+
+        // Look up the customer record (optional — flow still works if not found)
+        const customer = await Customer.findOne({ phone: normalizedPhone });
+
+        // Mark this phone as "awaiting a suggestion reply"
+        await Feedback.findOneAndUpdate(
+          { customerPhone: normalizedPhone, source: "whatsapp" },
+          {
+            customer: customer?._id,
+            customerName: customer?.name,
+            customerPhone: normalizedPhone,
+            branch: customer?.branch,
+            status: "awaiting_reply",
+            comments: undefined,
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+
+        console.log(`⏳ Awaiting suggestion text from ${rawPhone}`);
       }
     }
 
-    // Handle normal text messages
+    // ===================== TEXT REPLIES =====================
     else if (message.type === "text") {
-      console.log(
-        `💬 Text from ${message.from}: ${message.text?.body || ""}`
-      );
+      const text = message.text?.body?.trim() || "";
+      console.log(`💬 Text from ${rawPhone}: ${text}`);
+
+      // Is this phone currently awaiting a suggestion reply?
+      const pendingFeedback = await Feedback.findOne({
+        customerPhone: normalizedPhone,
+        source: "whatsapp",
+        status: "awaiting_reply",
+      }).sort({ updatedAt: -1 });
+
+      if (pendingFeedback && text) {
+        pendingFeedback.comments = text;
+        pendingFeedback.status = "submitted";
+        pendingFeedback.submittedAt = new Date();
+        await pendingFeedback.save();
+
+        // Email Sahil with the customer's suggestion
+        await sendFeedbackNotificationEmail({
+          customerName: pendingFeedback.customerName,
+          customerPhone: pendingFeedback.customerPhone,
+          branch: pendingFeedback.branch,
+          comment: text,
+        });
+
+        // Thank the customer
+        await sendPlainWhatsAppMessage(
+          rawPhone,
+          "Thank you for your valuable feedback. We will work on improving your experience. 🙏"
+        );
+
+        console.log(`✅ Feedback saved + emailed for ${rawPhone}`);
+      } else {
+        console.log(
+          "ℹ️ Text received but no pending feedback request for this number."
+        );
+      }
     } else {
       console.log(`ℹ️ Unhandled message type: ${message.type}`);
     }
