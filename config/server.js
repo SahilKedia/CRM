@@ -4,6 +4,7 @@ const express = require("express");
 const path = require("path");
 const fs = require("fs");
 const cors = require("cors");
+const crypto = require("crypto");
 
 const connectDB = require("./config/db");
 
@@ -188,6 +189,7 @@ app.post("/webhook", async (req, res) => {
             branch: customer?.branch?.name || "N/A",
             status: "awaiting_reply",
             comments: undefined,
+            token: crypto.randomBytes(16).toString("hex"),
           },
           { upsert: true, new: true, setDefaultsOnInsert: true }
         );
