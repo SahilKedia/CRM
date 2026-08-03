@@ -7,7 +7,7 @@ const cors = require("cors");
 const crypto = require("crypto");
 
 const connectDB = require("./config/db");
-
+const privacyRoutes = require("./routes/privacyRoutes");
 const authRoutes = require("./routes/authRoutes");
 const employeeRoutes = require("./routes/employeeRoutes");
 const customerRoutes = require("./routes/customerRoutes");
@@ -68,7 +68,7 @@ app.use("/api/admins", adminRoutes);
 app.get("/", (req, res) => {
   res.send("Server Running...");
 });
-
+app.use("/", privacyRoutes);
 // ===================== FEEDBACK PAGE =====================
 app.get("/feedback/:token", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "feedback.html"));
