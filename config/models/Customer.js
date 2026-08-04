@@ -66,8 +66,10 @@ const VisitSchema = new mongoose.Schema(
       trim: true,
     },
     additionalInfo: { type: String },
-    additionalInfoImage: { type: [String], default: undefined }, // ✅ FIXED — array of relative paths, like goldImages
-
+additionalInfoImage: {
+  type: [String],
+  default: undefined,
+}, // Array of DigitalOcean Spaces image URLs
   },
   {
     _id: false, // We don't need a separate _id for each visit; use visitNumber as identifier

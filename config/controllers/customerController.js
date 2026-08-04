@@ -107,20 +107,22 @@ exports.addCustomer = async (req, res) => {
     }
 
     // Handle image uploads — store relative paths only (no host/IP baked in)
-    const goldImages = (req.files?.goldImages || []).map((f) => `uploads/customers/${f.filename}`);
-    const diamondImages = (req.files?.diamondImages || []).map((f) => `uploads/customers/${f.filename}`);
-    const polkiImages = (req.files?.polkiImages || []).map((f) => `uploads/customers/${f.filename}`);
+    const goldImages = (req.files?.goldImages || []).map((f) => f.location);
+
+const diamondImages = (req.files?.diamondImages || []).map((f) => f.location);
+
+const polkiImages = (req.files?.polkiImages || []).map((f) => f.location);
 
     // Handle customer profile photo (single image, optional)
     const customerImageFile = req.files?.customerImage?.[0];
     const customerImage = customerImageFile
-      ? `uploads/customers/${customerImageFile.filename}`
-      : undefined;
+  ? customerImageFile.location
+  : undefined;
 
     // ✅ Handle additional info images (multiple, optional)
     const additionalInfoImage = (req.files?.additionalInfoImage || []).map(
-      (f) => `uploads/customers/${f.filename}`
-    );
+  (f) => f.location
+);
 
     // Handle reminder
     let finalReminder = undefined;
@@ -256,11 +258,13 @@ exports.addVisit = async (req, res) => {
       additionalInfo,
     } = req.body;
 
-    const goldImages = (req.files?.goldImages || []).map((f) => `uploads/customers/${f.filename}`);
-    const diamondImages = (req.files?.diamondImages || []).map((f) => `uploads/customers/${f.filename}`);
-    const polkiImages = (req.files?.polkiImages || []).map((f) => `uploads/customers/${f.filename}`);
-    const additionalInfoImage = (req.files?.additionalInfoImage || []).map((f) => `uploads/customers/${f.filename}`);
+const goldImages = (req.files?.goldImages || []).map((f) => f.location);
 
+const diamondImages = (req.files?.diamondImages || []).map((f) => f.location);
+
+const polkiImages = (req.files?.polkiImages || []).map((f) => f.location);
+
+const additionalInfoImage = (req.files?.additionalInfoImage || []).map((f) => f.location);
     if (!customer.visits) {
       customer.visits = [];
     }
@@ -382,10 +386,13 @@ exports.updateVisit = async (req, res) => {
       removeAdditionalInfoImages,
     } = req.body;
 
-    const newGoldImages = (req.files?.goldImages || []).map((f) => `uploads/customers/${f.filename}`);
-    const newDiamondImages = (req.files?.diamondImages || []).map((f) => `uploads/customers/${f.filename}`);
-    const newPolkiImages = (req.files?.polkiImages || []).map((f) => `uploads/customers/${f.filename}`);
-    const newAdditionalInfoImages = (req.files?.additionalInfoImage || []).map((f) => `uploads/customers/${f.filename}`);
+const newGoldImages = (req.files?.goldImages || []).map((f) => f.location);
+
+const newDiamondImages = (req.files?.diamondImages || []).map((f) => f.location);
+
+const newPolkiImages = (req.files?.polkiImages || []).map((f) => f.location);
+
+const newAdditionalInfoImages = (req.files?.additionalInfoImage || []).map((f) => f.location);
 
     let goldImages = visit.goldImages || [];
     let diamondImages = visit.diamondImages || [];
@@ -802,10 +809,10 @@ exports.updateCustomer = async (req, res) => {
     const updateData = { ...req.body };
 
     // Handle customer image
-    const newCustomerImageFile = req.files?.customerImage?.[0];
-    if (newCustomerImageFile) {
-      updateData.customerImage = `uploads/customers/${newCustomerImageFile.filename}`;
-    }
+   const newCustomerImageFile = req.files?.customerImage?.[0];
+if (newCustomerImageFile) {
+  updateData.customerImage = newCustomerImageFile.location;
+}
 
     // Handle reminder logic
     const hasReminderDate = updateData.reminderDate !== undefined;
